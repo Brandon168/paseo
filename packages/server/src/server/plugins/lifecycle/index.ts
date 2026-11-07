@@ -1,4 +1,3 @@
-import { validateBranchSlug } from "@getpaseo/protocol/branch-slug";
 import {
   createLifecycleRegistration,
   pluginHookRegistry,
@@ -6,15 +5,11 @@ import {
 import { isDeepStrictEqual } from "node:util";
 import {
   serializeAgentTool,
-  agentToolMetadataSchema,
   type SessionOpenWireRequest,
   type PluginAgentTools,
 } from "../agent-tools.js";
 import type { AgentToolDefinition } from "@getpaseo/plugin/server";
 import type { AgentStreamEvent } from "../../agent/agent-sdk-types.js";
-import { z } from "zod";
-import type { JsonValue } from "@getpaseo/protocol/agent-types";
-import { CreateAgentRequestMessageSchema } from "@getpaseo/protocol/messages";
 import type {
   PluginHookAgent,
   PluginHookPayload,
@@ -27,7 +22,6 @@ import type {
   PluginHookWorkspace,
   PluginHookEvents,
 } from "@getpaseo/plugin/server";
-import { WorkspaceCreateRequestSchema } from "@getpaseo/protocol/messages";
 import type { PersistedWorkspaceRecord } from "../../workspace-registry.js";
 
 export type PluginWireBeforeRequests = Omit<PluginHookRequests, "agent.open.before"> & {
@@ -39,96 +33,27 @@ export type PluginBeforeResults = PluginWireBeforeRequests & {
   "agent.open.before": SessionOpenWireRequest & { mcpServerOwners?: Record<string, string> };
 };
 
-const worktreeRequestFields = {
-  repoRoot: z.string(),
-  sourceCheckout: z.string(),
-  branch: z.string().min(1),
-  slug: z.string().refine((value) => validateBranchSlug(value).valid, "Invalid worktree slug"),
-  path: z.string().min(1),
-};
-const changeRequestFields = {
-  headRef: z.string().min(1),
-  headRepositoryOwner: z.string().optional(),
-  checkoutRefs: z
-    .array(z.object({ remoteName: z.string().optional(), remoteRef: z.string() }))
-    .optional(),
-  pushRemoteUrl: z.string().optional(),
-  trackOriginHead: z.boolean().optional(),
-};
-const worktreeRequestSchema = z.discriminatedUnion("kind", [
-  z
-    .object({ ...worktreeRequestFields, kind: z.literal("branch-off"), baseRef: z.string().min(1) })
-    .strict(),
-  z
-    .object({
-      ...worktreeRequestFields,
-      kind: z.literal("checkout-branch"),
-    })
-    .strict(),
-  z
-    .object({
-      ...worktreeRequestFields,
-      ...changeRequestFields,
-      kind: z.literal("checkout-change-request"),
-      baseRef: z.string().min(1),
-      forge: z.string(),
-      changeRequestNumber: z.number().int().positive(),
-      headRepository: z.string().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      ...worktreeRequestFields,
-      ...changeRequestFields,
-      kind: z.literal("checkout-github-pr"),
-      baseRef: z.string().min(1),
-      githubPrNumber: z.number().int().positive(),
-    })
-    .strict(),
+// The hook schemas pull in the protocol's message schemas; load them only when a hook runs.
+type HookSchemas = typeof import("./hook-schemas.js");
+let hookSchemas: HookSchemas | null = null;
+let hookSchemasLoad: Promise<HookSchemas> | null = null;
+
+export function loadHookSchemas(): Promise<HookSchemas> {
+  hookSchemasLoad ??= import("./hook-schemas.js").then((module) => (hookSchemas = module));
+  return hookSchemasLoad;
+}
+
+function loadedHookSchemas(): HookSchemas {
+  if (!hookSchemas) throw new Error("Plugin hook schemas are not loaded; await loadHookSchemas()");
+  return hookSchemas;
+}
+
+export const BEFORE_HOOK_NAMES: ReadonlySet<string> = new Set<keyof PluginWireBeforeRequests>([
+  "worktree.create.before",
+  "agent.create.before",
+  "agent.open.before",
+  "workspace.create.before",
 ]);
-
-const beforeSchemas = {
-  "worktree.create.before": worktreeRequestSchema,
-  "agent.create.before": CreateAgentRequestMessageSchema.pick({
-    config: true,
-    env: true,
-    metadata: true,
-  }).strict(),
-  "agent.open.before": z
-    .object({
-      agentId: z.string(),
-      workspaceId: z.string().nullable(),
-      provider: z.string(),
-      cwd: z.string(),
-      reason: z.enum(["create", "resume", "refresh", "import"]),
-      purpose: z.enum(["interactive", "history"]),
-      title: z.string().nullable(),
-      labels: z.record(z.string(), z.string()),
-      // Optional so a plugin that returns its own object keeps working; omitted means unchanged.
-      metadata: z.record(z.string(), z.custom<JsonValue>()).optional(),
-      tools: z.array(agentToolMetadataSchema),
-      env: z.record(z.string(), z.string()),
-      mcpServers: CreateAgentRequestMessageSchema.shape.config.shape.mcpServers.unwrap(),
-    })
-    .strict(),
-  "workspace.create.before": WorkspaceCreateRequestSchema.omit({
-    type: true,
-    requestId: true,
-  }).strict(),
-};
-
-const sessionOpenLocalResultSchema = beforeSchemas["agent.open.before"].extend({
-  tools: z.array(
-    z.custom<AgentToolDefinition>(
-      (tool) =>
-        typeof tool === "object" &&
-        tool !== null &&
-        "input" in tool &&
-        "execute" in tool &&
-        typeof tool.execute === "function",
-    ),
-  ),
-});
 
 export interface PluginLifecycle {
   wait(
@@ -146,7 +71,7 @@ export function validateBeforeRequest<Name extends keyof PluginWireBeforeRequest
   name: Name,
   value: unknown,
 ): PluginWireBeforeRequests[Name] {
-  return beforeSchemas[name].parse(value) as PluginWireBeforeRequests[Name];
+  return loadedHookSchemas().beforeSchemas[name].parse(value) as PluginWireBeforeRequests[Name];
 }
 
 export function describeHookWorkspace(workspace: PersistedWorkspaceRecord): PluginHookWorkspace {
@@ -224,6 +149,7 @@ export async function validateBeforeResult<Name extends keyof PluginWireBeforeRe
   input: PluginWireBeforeRequests[Name],
   output: unknown,
 ): Promise<PluginWireBeforeRequests[Name]> {
+  const { beforeSchemas } = await loadHookSchemas();
   const result = validateBeforeRequest(name, output);
   if (name === "agent.open.before") {
     const previous = beforeSchemas["agent.open.before"].parse(input);
@@ -306,7 +232,11 @@ export class PluginHookHandlers implements PluginLifecycleRegistration {
     const controller = new AbortController();
     this.active.set(id, controller);
     try {
-      if (Object.hasOwn(beforeSchemas, name)) {
+      if (BEFORE_HOOK_NAMES.has(name)) {
+        if (!hookSchemas) {
+          await loadHookSchemas();
+          controller.signal.throwIfAborted();
+        }
         const hookName = name as keyof PluginHookRequests;
         if (hookName === "agent.open.before") {
           return await this.openSession(input, { paseo, signal: controller.signal });
@@ -355,7 +285,7 @@ export class PluginHookHandlers implements PluginLifecycleRegistration {
         context,
       );
       if (result === undefined) continue;
-      const local = sessionOpenLocalResultSchema.parse(result);
+      const local = loadedHookSchemas().sessionOpenLocalResultSchema.parse(result);
       const metadata = local.tools.map(serializeAgentTool);
       request = await validateBeforeResult("agent.open.before", request, {
         ...local,
@@ -383,6 +313,8 @@ export class PluginHookHandlers implements PluginLifecycleRegistration {
   }
 
   private register(name: string, handler: Handler): () => void {
+    // Load the schemas a before hook needs now, so invoking it later stays synchronous.
+    if (BEFORE_HOOK_NAMES.has(name)) void loadHookSchemas();
     let handlers = this.handlers.get(name);
     if (!handlers) {
       handlers = new Set();
