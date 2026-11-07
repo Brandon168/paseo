@@ -15,6 +15,7 @@ export type DaemonClientConfig = Omit<
 > & { clientId?: string };
 export type CreateAgentOptions = CreateAgentRequestOptions;
 export { type SendMessageOptions, type DaemonEvent, type DaemonEventHandler };
+export { preloadDaemonMessageValidators } from "@getpaseo/client/internal/daemon-client";
 
 let testClientCounter = 0;
 

@@ -10,7 +10,7 @@ import type {
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 import type pino from "pino";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
@@ -20,7 +20,7 @@ import type { DaemonConfigStore } from "./daemon-config-store.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { ScheduleService } from "./schedule/service.js";
 import { createStub } from "./test-utils/class-mocks.js";
-import { DaemonClient } from "./test-utils/daemon-client.js";
+import { DaemonClient, preloadDaemonMessageValidators } from "./test-utils/daemon-client.js";
 import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
 import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
 import type { WorkspaceAutoName } from "./workspace-auto-name.js";
@@ -198,6 +198,10 @@ describe("WebSocketServer browser tools wiring", () => {
     expect(harness.broker.getPendingRequestCount()).toBe(0);
   });
 });
+
+// The harness clients allow 500 ms to connect; a cold Vitest transform of the message validators
+// takes longer than that.
+beforeAll(() => preloadDaemonMessageValidators(), 60_000);
 
 async function startBrowserToolsDaemonHarness(): Promise<BrowserToolsDaemonHarness> {
   const httpServer = createServer();

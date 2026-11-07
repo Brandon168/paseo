@@ -1534,6 +1534,9 @@ export class DaemonClient {
 
   constructor(private config: DaemonClientConfig) {
     this.logger = config.logger ?? consoleLogger;
+    // Start loading the validators now so they are usually ready before the first frame;
+    // holdUntilValidatorLoads keeps order if they are not. A failure is logged there.
+    if (!config.trustInboundMessages) void loadInboundValidator().catch(() => {});
     this.relaySecurityFloorValue = config.e2ee?.minimumMode;
     this.logConnectionPath = isRelayClientWebSocketUrl(this.config.url) ? "relay" : "direct";
     let parsedUrlForLog: URL | null = null;
