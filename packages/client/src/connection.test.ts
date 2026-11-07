@@ -1,6 +1,14 @@
-import { expect, test } from "vitest";
+import { beforeAll, expect, test } from "vitest";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
-import { DaemonClient, type DaemonTransport } from "./daemon-client";
+import {
+  DaemonClient,
+  preloadDaemonMessageValidators,
+  type DaemonTransport,
+} from "./daemon-client";
+
+// Validators and schemas load on the first validated frame; transforming them under Vitest takes
+// seconds, which would land inside whichever test receives a frame first.
+beforeAll(() => preloadDaemonMessageValidators(), 60_000);
 
 function connection(
   options: {

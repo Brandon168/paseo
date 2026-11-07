@@ -34,21 +34,17 @@ import type { LocalSpeechModel } from "@getpaseo/protocol/speech/rpc-schemas";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import { MAX_WEBSOCKET_MESSAGE_BYTES } from "@getpaseo/protocol/websocket-message-limit";
-import {
-  AgentCreateFailedStatusPayloadSchema,
-  AgentCreatedStatusPayloadSchema,
+import type {
   AgentRefreshedStatusPayloadSchema,
-  AgentResumedStatusPayloadSchema,
   CheckoutRenameBranchResponseSchema,
-  parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
-  SessionInboundMessageSchema,
-  type ActiveTurnBehavior,
-  type ServerInfoStatusPayload,
+  ActiveTurnBehavior,
+  ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
+import { loadedProtocolSchemas, loadProtocolSchemas } from "./protocol-schemas.js";
 import type { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
 import type {
   AgentStreamEventPayload,
@@ -493,9 +489,19 @@ function loadInboundValidator(): Promise<InboundValidator> {
   return inboundValidatorLoad;
 }
 
+// Checks a request against the protocol before sending, once the schemas have loaded. The daemon
+// validates every message it receives and stays the authority; this only catches client bugs
+// early, so a client that has not loaded the schemas (one that trusts its daemon) skips it.
+function validateOutbound(message: unknown): SessionInboundMessage {
+  const schemas = loadedProtocolSchemas();
+  return schemas
+    ? schemas.SessionInboundMessageSchema.parse(message)
+    : (message as SessionInboundMessage);
+}
+
 /** Loads the message validators now instead of on the first validated frame. */
 export function preloadDaemonMessageValidators(): Promise<void> {
-  return loadInboundValidator().then(() => undefined);
+  return Promise.all([loadInboundValidator(), loadProtocolSchemas()]).then(() => undefined);
 }
 
 export interface DaemonClientTrace {
@@ -1410,7 +1416,7 @@ function buildFetchAgentsRequest(
   options: FetchAgentsOptions | undefined,
   requestId: string,
 ): SessionInboundMessage {
-  return SessionInboundMessageSchema.parse({
+  return validateOutbound({
     type: "fetch_agents_request",
     requestId,
     ...(options?.scope ? { scope: options.scope } : {}),
@@ -1435,7 +1441,7 @@ export class DaemonClient {
   private readonly owned = new ConnectionSubscriptions({
     send: (message) =>
       this.sendSessionMessageOrThrow(
-        SessionInboundMessageSchema.parse({ ...message, requestId: this.createRequestId() }),
+        validateOutbound({ ...message, requestId: this.createRequestId() }),
       ),
     release: async (subscriptionId) => {
       if (!this.isConnected) return;
@@ -1536,7 +1542,7 @@ export class DaemonClient {
     this.logger = config.logger ?? consoleLogger;
     // Start loading the validators now so they are usually ready before the first frame;
     // holdUntilValidatorLoads keeps order if they are not. A failure is logged there.
-    if (!config.trustInboundMessages) void loadInboundValidator().catch(() => {});
+    if (!config.trustInboundMessages) void preloadDaemonMessageValidators().catch(() => {});
     this.relaySecurityFloorValue = config.e2ee?.minimumMode;
     this.logConnectionPath = isRelayClientWebSocketUrl(this.config.url) ? "relay" : "direct";
     let parsedUrlForLog: URL | null = null;
@@ -2240,7 +2246,7 @@ export class DaemonClient {
       }
       throw new Error(`Transport not connected (status: ${this.connectionState.status})`);
     }
-    const payload = SessionInboundMessageSchema.parse(message);
+    const payload = validateOutbound(message);
     try {
       this.sendSessionPayload(payload);
     } catch (error) {
@@ -2280,7 +2286,7 @@ export class DaemonClient {
    */
   private sendSessionMessageOrThrow(message: SessionInboundMessage): Promise<void> {
     return this.sendWhenConnected(() => {
-      const payload = SessionInboundMessageSchema.parse(message);
+      const payload = validateOutbound(message);
       return this.sendSessionPayload(payload);
     });
   }
@@ -2456,7 +2462,7 @@ export class DaemonClient {
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const resolvedRequestId = this.createRequestId(params.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       ...params.message,
       requestId: resolvedRequestId,
     });
@@ -2500,7 +2506,7 @@ export class DaemonClient {
     if (!this.transport || this.connectionState.status !== "connected") {
       throw this.unavailableError();
     }
-    const payload = SessionInboundMessageSchema.parse(message);
+    const payload = validateOutbound(message);
     try {
       return this.sendSessionPayload(payload);
     } catch (error) {
@@ -2510,7 +2516,7 @@ export class DaemonClient {
 
   async clearAgentAttention(agentId: string | string[]): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "clear_agent_attention",
       agentId,
       requestId,
@@ -2533,7 +2539,7 @@ export class DaemonClient {
 
   async clearWorkspaceAttention(workspaceId: string | string[]): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "workspace.clear_attention.request",
       workspaceId,
       requestId,
@@ -2835,7 +2841,7 @@ export class DaemonClient {
           this.requireWorkspaceSetupObservation();
         if (query.type === "plugin.rpc.subscribe.request") this.requirePluginSubscriptions();
         const requestId = this.createRequestId(options?.requestId);
-        const request = SessionInboundMessageSchema.parse({ ...query, requestId });
+        const request = validateOutbound({ ...query, requestId });
         try {
           return await this.sendCorrelatedRequest<T, CorrelatedResponsePayload<T>>({
             message: request,
@@ -2967,7 +2973,7 @@ export class DaemonClient {
   async fetchAgentHistory(options?: FetchAgentHistoryOptions): Promise<FetchAgentHistoryPayload> {
     if (options?.filter?.includeBackground) this.requireBackgroundWorkspaces();
     const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "fetch_agent_history_request",
       requestId: resolvedRequestId,
       ...(options?.filter ? { filter: options.filter } : {}),
@@ -2995,7 +3001,7 @@ export class DaemonClient {
     options?: FetchRecentProviderSessionsOptions,
   ): Promise<FetchRecentProviderSessionsPayload> {
     const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "fetch_recent_provider_sessions_request",
       requestId: resolvedRequestId,
       ...(options?.cwd ? { cwd: options.cwd } : {}),
@@ -3038,7 +3044,7 @@ export class DaemonClient {
       return { ...(await subscription.ready), subscription };
     }
     const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "fetch_workspaces_request",
       ...options,
       requestId: resolvedRequestId,
@@ -3169,7 +3175,7 @@ export class DaemonClient {
   async listProjects(options?: string | ProjectListOptions): Promise<ProjectListPayload> {
     const requestId = typeof options === "string" ? options : options?.requestId;
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "project.list.request",
       requestId: resolvedRequestId,
       ...(typeof options === "object" && options.sync ? { sync: options.sync } : {}),
@@ -3398,7 +3404,7 @@ export class DaemonClient {
   ): Promise<FetchAgentResult | null> {
     const options = normalizeFetchAgentOptions(input, legacyOptions);
     const resolvedRequestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "fetch_agent_request",
       requestId: resolvedRequestId,
       agentId: options.agentId,
@@ -3553,7 +3559,7 @@ export class DaemonClient {
     const requestId = this.createRequestId(options.requestId);
     const config = resolveAgentConfig(options);
 
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "create_agent_request",
       requestId,
       config,
@@ -3578,6 +3584,7 @@ export class DaemonClient {
         : {}),
     });
 
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     const status = await this.sendRequest({
       requestId,
       message,
@@ -3586,11 +3593,11 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const created = AgentCreatedStatusPayloadSchema.safeParse(msg.payload);
+        const created = schemas.AgentCreatedStatusPayloadSchema.safeParse(msg.payload);
         if (created.success && created.data.requestId === requestId) {
           return created.data;
         }
-        const failed = AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
+        const failed = schemas.AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
         if (failed.success && failed.data.requestId === requestId) {
           return failed.data;
         }
@@ -3606,7 +3613,7 @@ export class DaemonClient {
 
   async deleteAgent(agentId: string): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "delete_agent_request",
       agentId,
       requestId,
@@ -3629,7 +3636,7 @@ export class DaemonClient {
 
   async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "archive_agent_request",
       agentId,
       requestId,
@@ -3668,7 +3675,7 @@ export class DaemonClient {
     updates: { name?: string; labels?: Record<string, string> },
   ): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "update_agent_request",
       agentId,
       ...(updates.name !== undefined ? { name: updates.name } : {}),
@@ -3889,13 +3896,14 @@ export class DaemonClient {
     overrides?: Partial<AgentSessionConfig>,
   ): Promise<AgentSnapshotPayload> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "resume_agent_request",
       requestId,
       handle,
       ...(overrides ? { overrides } : {}),
     });
 
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     const status = await this.sendRequest({
       requestId,
       message,
@@ -3904,7 +3912,7 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const resumed = AgentResumedStatusPayloadSchema.safeParse(msg.payload);
+        const resumed = schemas.AgentResumedStatusPayloadSchema.safeParse(msg.payload);
         if (resumed.success && resumed.data.requestId === requestId) {
           return resumed.data;
         }
@@ -3917,7 +3925,7 @@ export class DaemonClient {
 
   async importAgent(input: ImportAgentInput): Promise<AgentSnapshotPayload> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "import_agent_request",
       requestId,
       ...("providerId" in input
@@ -3928,6 +3936,7 @@ export class DaemonClient {
       ...(input.labels && Object.keys(input.labels).length > 0 ? { labels: input.labels } : {}),
     });
 
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     const status = await this.sendRequest({
       requestId,
       message,
@@ -3936,12 +3945,12 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const resumed = AgentResumedStatusPayloadSchema.safeParse(msg.payload);
+        const resumed = schemas.AgentResumedStatusPayloadSchema.safeParse(msg.payload);
         if (resumed.success && resumed.data.requestId === requestId) {
           return resumed.data;
         }
 
-        const failed = AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
+        const failed = schemas.AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
         if (failed.success && failed.data.requestId === requestId) {
           return failed.data;
         }
@@ -3959,11 +3968,12 @@ export class DaemonClient {
 
   async refreshAgent(agentId: string, requestId?: string): Promise<AgentRefreshedStatusPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "refresh_agent_request",
       agentId,
       requestId: resolvedRequestId,
     });
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -3972,7 +3982,7 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const refreshed = AgentRefreshedStatusPayloadSchema.safeParse(msg.payload);
+        const refreshed = schemas.AgentRefreshedStatusPayloadSchema.safeParse(msg.payload);
         if (refreshed.success && refreshed.data.requestId === resolvedRequestId) {
           return refreshed.data;
         }
@@ -3989,7 +3999,7 @@ export class DaemonClient {
     // Reading history predates this capability and must keep working on older hosts.
     const supportsWholeTurns = this.lastServerInfoMessage?.features?.wholeTurnTimeline === true;
     const resolvedRequestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "fetch_agent_timeline_request",
       ...(supportsWholeTurns && options.wholeTurns !== undefined
         ? { wholeTurns: options.wholeTurns }
@@ -4059,7 +4069,7 @@ export class DaemonClient {
     options: { requestId?: string; timeout?: number } = {},
   ): Promise<AgentTimelinePromptIndexPayload> {
     const requestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent.timeline.list_prompts.request",
       agentId,
       requestId,
@@ -4086,7 +4096,7 @@ export class DaemonClient {
     options: { requestId?: string; timeout?: number } = {},
   ): Promise<ProviderSubagentListPayload> {
     const requestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent.provider_subagents.list.request",
       parentAgentId,
       requestId,
@@ -4170,7 +4180,7 @@ export class DaemonClient {
       throw new Error("Update the host to view subagent conversations.");
     }
     const requestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent.provider_subagents.timeline.get.request",
       parentAgentId,
       subagentId,
@@ -4233,7 +4243,7 @@ export class DaemonClient {
     options: AgentForkContextOptions = {},
   ): Promise<AgentForkContextPayload> {
     const resolvedRequestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent.fork_context.request",
       agentId,
       requestId: resolvedRequestId,
@@ -4287,7 +4297,7 @@ export class DaemonClient {
     }
     const requestId = this.createRequestId();
     const messageId = options.messageId ?? crypto.randomUUID();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "send_agent_message_request",
       requestId,
       agentId,
@@ -4334,7 +4344,7 @@ export class DaemonClient {
     mode: "conversation" | "files" | "both",
   ): Promise<AgentRewindResponseMessage["payload"]> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent.rewind.request",
       requestId,
       agentId,
@@ -4363,7 +4373,7 @@ export class DaemonClient {
 
   async cancelAgent(agentId: string): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "cancel_agent_request",
       agentId,
       requestId,
@@ -4389,7 +4399,7 @@ export class DaemonClient {
 
   async setAgentMode(agentId: string, modeId: string): Promise<AgentProviderNotice | null> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "set_agent_mode_request",
       agentId,
       modeId,
@@ -4417,7 +4427,7 @@ export class DaemonClient {
 
   async setAgentModel(agentId: string, modelId: string | null): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "set_agent_model_request",
       agentId,
       modelId,
@@ -4444,7 +4454,7 @@ export class DaemonClient {
 
   async setAgentFeature(agentId: string, featureId: string, value: unknown): Promise<void> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "set_agent_feature_request",
       agentId,
       featureId,
@@ -4510,7 +4520,7 @@ export class DaemonClient {
     thinkingOptionId: string | null,
   ): Promise<AgentProviderNotice | null> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "set_agent_thinking_request",
       agentId,
       thinkingOptionId,
@@ -4555,7 +4565,7 @@ export class DaemonClient {
       wireConfig = legacy.featureValuesConfig(config, pending ? await pending : []);
     }
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent.config.apply.request",
       agentId,
       config: wireConfig,
@@ -4587,12 +4597,13 @@ export class DaemonClient {
     options?: { timeout?: number; killTerminals?: boolean },
   ): Promise<RestartRequestedStatusPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "restart_server_request",
       ...(reason && reason.trim().length > 0 ? { reason } : {}),
       requestId: resolvedRequestId,
       ...(options?.killTerminals ? { killTerminals: true } : {}),
     });
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -4602,7 +4613,7 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const restarted = RestartRequestedStatusPayloadSchema.safeParse(msg.payload);
+        const restarted = schemas.RestartRequestedStatusPayloadSchema.safeParse(msg.payload);
         if (!restarted.success) {
           return null;
         }
@@ -4616,11 +4627,12 @@ export class DaemonClient {
 
   async shutdownServer(options?: ShutdownServerOptions): Promise<ShutdownRequestedStatusPayload> {
     const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "shutdown_server_request",
       requestId: resolvedRequestId,
       ...(options?.keepTerminals ? { keepTerminals: true } : {}),
     });
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -4630,7 +4642,7 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const shutdown = ShutdownRequestedStatusPayloadSchema.safeParse(msg.payload);
+        const shutdown = schemas.ShutdownRequestedStatusPayloadSchema.safeParse(msg.payload);
         if (!shutdown.success) {
           return null;
         }
@@ -4644,17 +4656,18 @@ export class DaemonClient {
 
   async updateDaemon(requestId?: string): Promise<DaemonUpdateResponse["payload"]> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "daemon.update.request",
       requestId: resolvedRequestId,
     });
+    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
       timeout: 300_000, // 5 minutes — npm update can be slow on remote machines
       options: { skipQueue: true },
       select: (msg) => {
-        const parsed = DaemonUpdateResponseSchema.safeParse(msg);
+        const parsed = schemas.DaemonUpdateResponseSchema.safeParse(msg);
         if (!parsed.success) {
           return null;
         }
@@ -4672,7 +4685,7 @@ export class DaemonClient {
 
   async setVoiceMode(enabled: boolean, agentId?: string): Promise<SetVoiceModePayload> {
     const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "set_voice_mode",
       enabled,
       ...(agentId ? { agentId } : {}),
@@ -4950,7 +4963,7 @@ export class DaemonClient {
     }
 
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "checkout_status_request",
       cwd,
       requestId: resolvedRequestId,
@@ -6758,7 +6771,7 @@ export class DaemonClient {
     response: AgentPermissionResponse,
     timeout = 15000,
   ): Promise<AgentPermissionResolvedPayload> {
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "agent_permission_response",
       agentId,
       requestId,
@@ -6896,7 +6909,7 @@ export class DaemonClient {
   async waitForFinish(agentId: string, timeout = 60000): Promise<WaitForFinishResult> {
     const requestId = this.createRequestId();
     const hasTimeout = Number.isFinite(timeout) && timeout > 0;
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "wait_for_finish_request",
       requestId,
       agentId,
@@ -6946,7 +6959,7 @@ export class DaemonClient {
     options?: { workspaceId?: string },
   ): Promise<ListTerminalsPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "list_terminals_request",
       ...(cwd === undefined ? {} : { cwd }),
       ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
@@ -6973,7 +6986,7 @@ export class DaemonClient {
     },
   ): Promise<CreateTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "create_terminal_request",
       cwd,
       name,
@@ -7095,7 +7108,7 @@ export class DaemonClient {
 
   async killTerminal(terminalId: string, requestId?: string): Promise<KillTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "kill_terminal_request",
       terminalId,
       requestId: resolvedRequestId,
@@ -7113,7 +7126,7 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<CloseItemsPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "close_items_request",
       agentIds: input.agentIds ?? [],
       terminalIds: input.terminalIds ?? [],
@@ -7133,7 +7146,7 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<CaptureTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
+    const message = validateOutbound({
       type: "capture_terminal_request",
       terminalId,
       ...(options?.start === undefined ? {} : { start: options.start }),
@@ -7407,10 +7420,11 @@ export class DaemonClient {
   /** Holds every frame, binary included, until the validator has loaded, so order is kept. */
   private holdUntilValidatorLoads(data: unknown): boolean {
     if (this.config.trustInboundMessages) return false;
-    if (inboundValidator && this.framesAwaitingValidator.length === 0) return false;
+    if (inboundValidator && loadedProtocolSchemas() && this.framesAwaitingValidator.length === 0)
+      return false;
     this.framesAwaitingValidator.push({ data, transport: this.transport });
     if (this.framesAwaitingValidator.length > 1) return true;
-    void loadInboundValidator().then(
+    void preloadDaemonMessageValidators().then(
       () => {
         const frames = this.framesAwaitingValidator;
         this.framesAwaitingValidator = [];
@@ -7468,6 +7482,17 @@ export class DaemonClient {
     } finally {
       this.endTraceSection(isOpen);
     }
+  }
+
+  private readServerInfo(payload: unknown): ServerInfoStatusPayload | null {
+    const schemas = this.config.trustInboundMessages ? null : loadedProtocolSchemas();
+    if (schemas) return schemas.parseServerInfoStatusPayload(payload);
+    // Trusted: the daemon is this build, so a server_info status is well-formed.
+    return payload !== null &&
+      typeof payload === "object" &&
+      (payload as { status?: unknown }).status === "server_info"
+      ? (payload as ServerInfoStatusPayload)
+      : null;
   }
 
   private validateInbound(input: unknown): ReturnType<InboundValidator> {
@@ -7962,7 +7987,7 @@ export class DaemonClient {
     );
 
     if (consumerMessage.type === "status") {
-      const serverInfo = parseServerInfoStatusPayload(consumerMessage.payload);
+      const serverInfo = this.readServerInfo(consumerMessage.payload);
       if (serverInfo) {
         if (this.chunkedTransport)
           this.chunkedTransport.enabled =

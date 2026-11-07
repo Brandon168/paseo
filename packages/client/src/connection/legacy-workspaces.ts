@@ -1,4 +1,4 @@
-import { AgentSnapshotPayloadSchema } from "@getpaseo/protocol/messages";
+import { loadedProtocolSchemas } from "../protocol-schemas.js";
 import type { AgentSnapshotPayload, SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import {
   deriveAgentStateBucket,
@@ -64,7 +64,10 @@ export class LegacyWorkspaces {
         ...message,
         payload: {
           ...message.payload,
-          agent: stamp(AgentSnapshotPayloadSchema.parse(message.payload.agent)),
+          agent: stamp(
+            loadedProtocolSchemas()?.AgentSnapshotPayloadSchema.parse(message.payload.agent) ??
+              (message.payload.agent as AgentSnapshotPayload),
+          ),
         },
       };
     }

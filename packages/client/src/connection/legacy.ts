@@ -1,4 +1,4 @@
-import { SessionInboundMessageSchema } from "@getpaseo/protocol/messages";
+import { loadedProtocolSchemas } from "../protocol-schemas.js";
 import { LegacyWorkspaces } from "./legacy-workspaces.js";
 import { BrowserAutomationHostCapabilitySchema } from "@getpaseo/protocol/browser-automation/capabilities";
 import type {
@@ -6,6 +6,14 @@ import type {
   SessionInboundMessage,
   SessionOutboundMessage,
 } from "@getpaseo/protocol/messages";
+
+// Validated when the client has loaded the protocol schemas; the daemon validates it regardless.
+function parseRequest(message: unknown): SessionInboundMessage {
+  const schemas = loadedProtocolSchemas();
+  return schemas
+    ? schemas.SessionInboundMessageSchema.parse(message)
+    : (message as SessionInboundMessage);
+}
 
 export type ObservationRequest = { type: SessionInboundMessage["type"] } & Record<string, unknown>;
 interface Interest {
@@ -46,7 +54,7 @@ export class LegacySubscriptions {
     if (workspaces && message.type === "fetch_workspaces_request") {
       return {
         ...identity,
-        message: SessionInboundMessageSchema.parse({
+        message: parseRequest({
           type: "fetch_agents_request",
           requestId: message.requestId,
           scope: "active",
@@ -86,7 +94,7 @@ export class LegacySubscriptions {
     if (message.type === "checkout.diff.get.request") {
       const subscriptionId = `legacy:${crypto.randomUUID()}`;
       return {
-        message: SessionInboundMessageSchema.parse({
+        message: parseRequest({
           ...message,
           type: "subscribe_checkout_diff_request",
           subscriptionId,
