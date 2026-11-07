@@ -48,6 +48,7 @@ import type {
 } from "./terminal-manager.js";
 import {
   classifyTerminalWorkerProtocol,
+  currentTerminalWorkerEngine,
   type TerminalWorkerProtocolFit,
 } from "./terminal-worker-protocol.js";
 import type {
@@ -1021,6 +1022,36 @@ interface LiveWorkerRecord {
  * never finished, a dead worker whose programs survived it) go through the reaper first, so a
  * daemon never adopts terminals someone asked to close.
  */
+// A worker speaks its engine's v8.serialize, so a daemon on the other engine cannot drive it, ask
+// it anything or adopt its terminals. This happens once, after switching the daemon's runtime.
+function isOtherEngineWorker(record: TerminalWorkerRecord, logger: Logger): boolean {
+  const engine = record.engine ?? "node";
+  if (engine === currentTerminalWorkerEngine()) return false;
+  logger.warn(
+    {
+      pid: record.pid,
+      engine,
+      daemonEngine: currentTerminalWorkerEngine(),
+      terminals: record.terminals.length,
+    },
+    "Closing a terminal worker started by another JavaScript runtime; its terminals close",
+  );
+  return true;
+}
+
+async function closeOtherEngineWorkers(
+  input: Omit<Parameters<typeof reapTerminalWorkers>[0], "recordPaths"> & {
+    recordPaths: string[];
+    logger: Logger;
+  },
+): Promise<void> {
+  const { logger, ...reap } = input;
+  if (reap.recordPaths.length === 0) return;
+  await reapTerminalWorkers(reap).catch((error: unknown) => {
+    logger.warn({ err: error }, "Closing another runtime's terminal worker was not confirmed");
+  });
+}
+
 export async function startWorkerTerminalManager(
   options: StartWorkerTerminalManagerOptions,
 ): Promise<DaemonTerminalManager> {
@@ -1029,6 +1060,7 @@ export async function startWorkerTerminalManager(
   const log = (message: string, fields?: Record<string, unknown>) => logger.info(fields, message);
   const live: LiveWorkerRecord[] = [];
   const toReap: string[] = [];
+  const otherEngine: string[] = [];
   for (const file of await listTerminalWorkerRecords(options.paseoHome)) {
     if ("error" in file) {
       logger.warn({ recordPath: file.path, err: file.error }, "Unreadable terminal worker record");
@@ -1052,6 +1084,10 @@ export async function startWorkerTerminalManager(
           "Terminal worker socket probe inconclusive; attempting authentication",
         );
       }
+      if (isOtherEngineWorker(record, logger)) {
+        otherEngine.push(file.path);
+        continue;
+      }
       live.push({
         path: file.path,
         record,
@@ -1074,6 +1110,14 @@ export async function startWorkerTerminalManager(
       logger.warn({ err: error }, "Terminal cleanup of an unadoptable worker was not confirmed");
     });
   }
+
+  await closeOtherEngineWorkers({
+    paseoHome: options.paseoHome,
+    recordPaths: otherEngine,
+    inspector,
+    log,
+    logger,
+  });
 
   const obsolete = live.filter((entry) => entry.fit === "obsolete");
   if (obsolete.length > 0) {

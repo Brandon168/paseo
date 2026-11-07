@@ -44,6 +44,10 @@ const TerminalWorkerRecordSchema = z.object({
   // The copy of the worker's files it runs from (a directory name under terminal-worker/), or
   // null when it runs from source. A copy named by any record is never deleted.
   runtime: z.string().nullable().optional(),
+  // The JavaScript engine the worker runs on. Frames are v8.serialize, which Node and Bun encode
+  // differently, so a daemon can only drive a worker of its own engine. Absent: Node (every
+  // worker before this field existed).
+  engine: z.enum(["node", "bun"]).optional(),
   terminals: z.array(TerminalWorkerTerminalEntrySchema),
   // Set only in a cleanup record (below), with what a cleanup could not confirm gone. A record
   // marked closing is never adopted: the next daemon or stop retries the cleanup instead.

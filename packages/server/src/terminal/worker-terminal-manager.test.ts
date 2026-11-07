@@ -69,6 +69,7 @@ import {
 import {
   TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV,
   TERMINAL_WORKER_PROTOCOL_VERSION,
+  currentTerminalWorkerEngine,
 } from "./terminal-worker-protocol.js";
 import {
   NoTerminalWorkerAvailableError,
@@ -1638,6 +1639,34 @@ async function leaveWorkerWithTerminal(
     cwd,
   };
 }
+
+it("closes a worker started by the other JavaScript runtime instead of adopting it", async () => {
+  const paseoHome = createTemporaryHome();
+  const old = await leaveWorkerWithTerminal(paseoHome, 6);
+  const [record] = await workerRecords(paseoHome);
+  expect(record!.engine).toBe(currentTerminalWorkerEngine());
+  // Its frames would be the other engine's v8.serialize: this daemon can neither drive nor adopt it.
+  const otherEngine = currentTerminalWorkerEngine() === "node" ? "bun" : "node";
+  const recordPath = terminalWorkerRecordPath(paseoHome, old.workerPid);
+  writeFileSync(
+    recordPath,
+    JSON.stringify({ ...JSON.parse(readFileSync(recordPath, "utf8")), engine: otherEngine }),
+  );
+
+  manager = await startRealWorkerManager({ paseoHome });
+
+  await waitForCondition(() => !isProcessAlive(old.workerPid), 10000);
+  await waitForCondition(() => !isProcessAlive(old.programPid), 10000);
+  expect(manager.getTerminal(old.terminalId)).toBeUndefined();
+  const session = await manager.createTerminal({
+    workspaceId: "ws-engine",
+    cwd: old.cwd,
+    ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
+  });
+  expect(manager.getTerminal(session.id)).toBeDefined();
+  const workers = await workerRecords(paseoHome);
+  expect(workers.map((worker) => worker.engine)).toEqual([currentTerminalWorkerEngine()]);
+});
 
 it.each([1, 4])(
   "hard cuts unreleased worker protocol %s, closing its terminals",

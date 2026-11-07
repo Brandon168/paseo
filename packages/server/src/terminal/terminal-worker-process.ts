@@ -23,6 +23,7 @@ import { resolveTerminalWorkerSocketPath } from "./terminal-worker-socket-path.j
 import {
   TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV,
   TERMINAL_WORKER_PROTOCOL_VERSION,
+  currentTerminalWorkerEngine,
   type TerminalWorkerHello,
   type TerminalWorkerHelloAck,
   type TerminalWorkerListResult,
@@ -731,6 +732,7 @@ function runWorker(argv: string[]): void {
       socketPath,
       secret,
       runtime: args.runtime,
+      engine: currentTerminalWorkerEngine(),
       terminals: [],
     };
     writeTerminalWorkerRecord(args.paseoHome, record);

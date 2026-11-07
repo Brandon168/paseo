@@ -51,6 +51,12 @@ export const TERMINAL_WORKER_PROTOCOL_VERSION = 6;
 // workers from one build.
 export const TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV = "PASEO_TERMINAL_WORKER_PROTOCOL_OVERRIDE";
 
+export type TerminalWorkerEngine = "node" | "bun";
+
+export function currentTerminalWorkerEngine(): TerminalWorkerEngine {
+  return process.versions.bun ? "bun" : "node";
+}
+
 /** How a daemon at `current` treats a worker reporting `reported`. */
 export type TerminalWorkerProtocolFit = "current" | "previous" | "obsolete" | "newer";
 
