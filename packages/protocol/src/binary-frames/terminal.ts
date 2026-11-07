@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TerminalStateSchema } from "../messages.js";
+import { TerminalStateSchema } from "../terminal-state.js";
 
 export const TerminalReplayMetadataSchema = z.object({
   rows: z.number().int().positive(),
