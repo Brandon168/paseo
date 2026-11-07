@@ -3,6 +3,14 @@ import { readPluginManifest } from "./manifest.js";
 import { assertPluginCompatibility } from "@getpaseo/protocol/plugin-requirements";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { isBuiltin } from "node:module";
+
+// Plugins target Node's module surface (their types come from @types/node). The host's
+// isBuiltin() reflects whichever runtime runs the daemon, so a `node:` specifier that runtime
+// lacks (Bun has no `node:sea`) would otherwise fail a type-only import. `node:` names only
+// built-ins, so accept the scheme regardless of the host runtime.
+function isNodeBuiltinSpecifier(specifier: string): boolean {
+  return specifier.startsWith("node:") || isBuiltin(specifier);
+}
 import path from "node:path";
 import { createPluginImportReader, type PluginImportKind } from "./compiler-imports.js";
 import type { Metafile, OnResolveResult, Plugin } from "esbuild";
@@ -197,7 +205,7 @@ function createRuntimeBoundaryPlugin(target: PluginBuildTarget, pluginDirectory:
           if (
             (PLUGIN_SDK_SPECIFIERS as readonly string[]).includes(specifier) ||
             /^(zod|react|react-native|@tanstack\/react-query)(\/|$)/.test(specifier) ||
-            isBuiltin(specifier) ||
+            isNodeBuiltinSpecifier(specifier) ||
             packageSpecifier === "@types/node"
           )
             continue;
@@ -288,7 +296,10 @@ function runtimeSpecifierError(
     !(PLUGIN_SDK_SPECIFIERS as readonly string[]).includes(specifier)
   )
     kind = "Unknown SDK";
-  else if (target !== "server" && (isBuiltin(specifier) || specifier === "@types/node"))
+  else if (
+    target !== "server" &&
+    (isNodeBuiltinSpecifier(specifier) || specifier === "@types/node")
+  )
     kind = "Node";
   else if (target !== "server" && isPluginServerOnlySdkSpecifier(specifier)) kind = "server-only";
   else if (

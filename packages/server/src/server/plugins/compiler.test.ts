@@ -174,6 +174,20 @@ describe("plugin runtime entries", () => {
     );
   });
 
+  it("accepts server type imports from node: built-ins the host runtime does not list", async () => {
+    // @types/node references built-ins such as node:sea that Bun's isBuiltin() does not know.
+    // The node: scheme names only built-ins, so the host runtime must not decide this.
+    const entries = await createSplitPlugin();
+    await writeFile(
+      entries.server,
+      'import type { Missing } from "node:paseo-host-runtime-lacks-this"; export default function contribute(value?: Missing) { return value ?? "Server contribution"; }',
+    );
+
+    const result = await compilePlugin(entries);
+
+    expect(result.serverBundle).toContain("Server contribution");
+  });
+
   it("still rejects missing third-party type dependencies", async () => {
     const entries = await createSplitPlugin();
     await writeFile(
