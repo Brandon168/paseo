@@ -316,6 +316,9 @@ export function createPluginWorker(options: {
       // The IPC peer is this installation's own daemon, so its messages are already valid.
       // Skipping validation keeps its generated validators (~65-120 MB) out of every plugin.
       trustInboundMessages: true,
+      // The channel is a pipe to the daemon (or an in-process queue for built-in plugins); its
+      // loss is reported directly, so a 10 s ping would only wake both sides.
+      livenessHeartbeat: false,
     });
     paseo = createPaseoApi(daemonClient);
     await daemonClient.connect();
