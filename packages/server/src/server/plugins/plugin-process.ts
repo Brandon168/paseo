@@ -24,12 +24,8 @@ import {
 } from "./subscription-handlers.js";
 import { fileURLToPath } from "node:url";
 import type { ZodType } from "zod";
-import {
-  ProviderEventSchema,
-  type ProviderConnection,
-  type ProviderRegistration,
-  ProviderStatusSchema,
-} from "@getpaseo/plugin/server/provider";
+import type { ProviderConnection, ProviderRegistration } from "@getpaseo/plugin/server/provider";
+import { pluginSdkRuntime } from "./plugin-sdk-runtime.js";
 import { createPaseoApi, type PaseoApi } from "@getpaseo/client";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { createPluginDaemonTransportFactory } from "./daemon-transport.js";
@@ -239,7 +235,9 @@ export function createPluginWorker(options: {
         send({
           type: "provider.event",
           connectionId: message.connectionId,
-          event: ProviderEventSchema.parse(jsonTransportValue(event)),
+          event: pluginSdkRuntime("@getpaseo/plugin/server/provider").ProviderEventSchema.parse(
+            jsonTransportValue(event),
+          ),
         });
       } catch (error) {
         providerConnections.delete(message.connectionId);
@@ -523,7 +521,9 @@ export function createPluginWorker(options: {
         const provider = providers.get(message.providerId);
         if (!provider || !provider.status)
           throw new Error(`Provider has no status capability: ${message.providerId}`);
-        const output = ProviderStatusSchema.parse(await provider.status(message.request));
+        const output = pluginSdkRuntime(
+          "@getpaseo/plugin/server/provider",
+        ).ProviderStatusSchema.parse(await provider.status(message.request));
         send({ type: "result", requestId: message.requestId, output });
       })().catch((error) =>
         send({ type: "error", requestId: message.requestId, error: describeError(error) }),
