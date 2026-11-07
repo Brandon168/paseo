@@ -1,6 +1,16 @@
 import type { Agent } from "node:http";
-import { EnvHttpProxyAgent, Pool, setGlobalDispatcher } from "undici";
+import { createRequire } from "node:module";
+import type { Dispatcher } from "undici";
 import { HttpsProxyAgent } from "https-proxy-agent";
+
+// undici is only needed to route fetch through a proxy. Loading it costs each daemon and plugin
+// process ~20 MB, so it is required on the first proxied configuration rather than imported.
+const nodeRequire = createRequire(import.meta.url);
+function undici(): typeof import("undici") {
+  return nodeRequire("undici") as typeof import("undici");
+}
+// The dispatcher fetch used before a proxy was installed, restored when the proxy is removed.
+let directDispatcher: Dispatcher | null = null;
 
 interface ProxyEnvironment {
   httpProxy: string;
@@ -57,7 +67,7 @@ function bypassList(noProxy: string): string {
 }
 
 function proxyClient(origin: URL, options: object) {
-  const pool = new Pool(origin, options);
+  const pool = new (undici().Pool)(origin, options);
   if (!origin.username && !origin.password) return pool;
   const credentials = `${decodeURIComponent(origin.username)}:${decodeURIComponent(origin.password)}`;
   const authorization = `Basic ${Buffer.from(credentials).toString("base64")}`;
@@ -82,6 +92,16 @@ export function initializeEnvironmentProxy(
 ): string[] {
   const resolved = readEnvironment(env, platform);
   environment = resolved.environment;
+  if (!environment.httpProxy && !environment.httpsProxy) {
+    // Without a proxy every request goes direct, which is what fetch already does.
+    if (directDispatcher) {
+      undici().setGlobalDispatcher(directDispatcher);
+      directDispatcher = null;
+    }
+    return resolved.ignored;
+  }
+  const { EnvHttpProxyAgent, getGlobalDispatcher, setGlobalDispatcher } = undici();
+  directDispatcher ??= getGlobalDispatcher();
   setGlobalDispatcher(
     new EnvHttpProxyAgent({
       httpProxy: environment.httpProxy,
