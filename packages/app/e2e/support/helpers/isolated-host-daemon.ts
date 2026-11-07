@@ -11,7 +11,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { withDisabledE2ESpeechEnv } from "./speech-env";
-import { killProcessTree, spawnTsx } from "./spawn-node";
+import { killProcessTree, spawnDaemonSupervisor } from "./spawn-node";
 
 const execFileAsync = promisify(execFile);
 
@@ -211,7 +211,7 @@ export async function startIsolatedHostDaemon(
     };
     const spawned = publishedPackageRoot
       ? spawn(process.execPath, ["dist/scripts/supervisor-entrypoint.js"], spawnOptions)
-      : spawnTsx("scripts/supervisor-entrypoint.ts", ["--dev"], spawnOptions);
+      : spawnDaemonSupervisor(serverDir, spawnOptions);
 
     child = spawned;
     let stderr = "";

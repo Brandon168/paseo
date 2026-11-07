@@ -1,5 +1,6 @@
 import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { once } from "node:events";
+import path from "node:path";
 
 /**
  * Runs a repo-local TypeScript entrypoint through Node's own tsx loader instead
@@ -18,6 +19,22 @@ export function spawnTsx(entrypoint: string, args: string[], options: SpawnOptio
     throw new Error(`TypeScript entrypoint must be a path, received ${entrypoint}`);
   }
   return spawn(process.execPath, ["--import", "tsx", "--", entrypoint, ...args], options);
+}
+
+/**
+ * Starts the daemon supervisor for a spec. By default it runs the TypeScript source in dev mode.
+ * Set `E2E_DAEMON_RUNTIME` to a node or bun binary to run the built daemon
+ * (`npm run build:server`) on that runtime instead, so the suite can check both.
+ */
+export function spawnDaemonSupervisor(serverDir: string, options: SpawnOptions): ChildProcess {
+  const runtime = process.env.E2E_DAEMON_RUNTIME;
+  if (runtime) {
+    return spawn(runtime, [path.join(serverDir, "dist/scripts/supervisor-entrypoint.js")], {
+      ...options,
+      cwd: serverDir,
+    });
+  }
+  return spawnTsx("scripts/supervisor-entrypoint.ts", ["--dev"], { ...options, cwd: serverDir });
 }
 
 /**
