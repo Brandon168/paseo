@@ -1,3 +1,4 @@
+import { enableEagerValidation } from "@getpaseo/client/eager-validation";
 import { createHostPluginClientBundleStore } from "@/plugins/client-bundles";
 import { watchdog } from "@/watchdog";
 import { createHostLogger } from "./host-logger";
@@ -93,6 +94,9 @@ import { projectIconCache } from "@/projects/icon-cache";
 import { createPerformanceTrace } from "@/performance/native-trace";
 import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
+
+// Validate daemon messages from the first frame instead of after an on-demand load.
+enableEagerValidation();
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
 export type PairingNavigationTarget = "openProject" | "hostRoot" | "hostSettings";

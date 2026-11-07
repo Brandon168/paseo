@@ -11,6 +11,12 @@ export type ProtocolSchemas = typeof ProtocolMessages;
 let schemas: ProtocolSchemas | null = null;
 let schemasLoad: Promise<ProtocolSchemas> | null = null;
 
+/** Supplies already-imported schemas, so no client in this process waits for them. */
+export function registerProtocolSchemas(module: ProtocolSchemas): void {
+  schemas ??= module;
+  schemasLoad ??= Promise.resolve(schemas);
+}
+
 export function loadProtocolSchemas(): Promise<ProtocolSchemas> {
   schemasLoad ??= import("@getpaseo/protocol/messages").then((module) => (schemas = module));
   return schemasLoad;

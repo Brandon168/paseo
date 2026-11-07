@@ -499,6 +499,15 @@ function validateOutbound(message: unknown): SessionInboundMessage {
     : (message as SessionInboundMessage);
 }
 
+/**
+ * Supplies an already-imported validator, so validating clients handle frames synchronously from
+ * the first one. `@getpaseo/client/eager-validation` does this for apps.
+ */
+export function registerDaemonMessageValidator(validator: InboundValidator): void {
+  inboundValidator ??= validator;
+  inboundValidatorLoad ??= Promise.resolve(inboundValidator);
+}
+
 /** Loads the message validators now instead of on the first validated frame. */
 export function preloadDaemonMessageValidators(): Promise<void> {
   return Promise.all([loadInboundValidator(), loadProtocolSchemas()]).then(() => undefined);

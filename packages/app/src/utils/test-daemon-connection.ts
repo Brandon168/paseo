@@ -1,3 +1,4 @@
+import { enableEagerValidation } from "@getpaseo/client/eager-validation";
 import {
   DaemonAuthenticationError,
   DaemonClient,
@@ -20,6 +21,9 @@ import {
   createDesktopDaemonTransportFactory,
 } from "@/desktop/daemon/desktop-daemon-transport";
 import type { DesktopDaemonTransportTarget } from "@/desktop/daemon/desktop-daemon";
+
+// Validate daemon messages from the first frame instead of after an on-demand load.
+enableEagerValidation();
 
 export interface DaemonProbeClient {
   readonly lastError: string | null;
