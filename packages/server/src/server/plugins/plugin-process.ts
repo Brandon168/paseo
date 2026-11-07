@@ -313,6 +313,9 @@ export function createPluginWorker(options: {
       // The runtime re-attaches a session when the daemon drops this socket.
       reconnect: { enabled: true },
       transportFactory,
+      // The IPC peer is this installation's own daemon, so its messages are already valid.
+      // Skipping validation keeps its generated validators (~65-120 MB) out of every plugin.
+      trustInboundMessages: true,
     });
     paseo = createPaseoApi(daemonClient);
     await daemonClient.connect();

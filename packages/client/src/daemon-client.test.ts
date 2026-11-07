@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi, beforeAll } from "vitest";
 import { z } from "zod";
 import {
   DaemonClient,
   DaemonConnectionError,
+  preloadDaemonMessageValidators,
   supportsUsageReports,
   type DaemonClientTrace,
   type CreateAgentRequestOptions,
@@ -60,6 +61,10 @@ function createTraceRecorder(): { trace: DaemonClientTrace; records: TraceRecord
     records,
   };
 }
+
+// The validators load on the first validated frame; transforming them under Vitest takes seconds,
+// which would land inside whichever test receives a frame first.
+beforeAll(() => preloadDaemonMessageValidators(), 60_000);
 
 function createMockTransport() {
   const sent: Array<string | Uint8Array | ArrayBuffer> = [];
@@ -7665,6 +7670,81 @@ test("rejects and logs a correlated response that violates the protocol schema",
     message: expect.stringMatching(/validation/i),
   });
   expect(warnings).toEqual(["Message validation failed"]);
+});
+
+test("a client that trusts its daemon delivers a response without validating it", async () => {
+  const mock = createMockTransport();
+  const warnings: string[] = [];
+  const logger: Logger = {
+    ...noopLogger,
+    warn: (_fields, message) => warnings.push(message ?? ""),
+  };
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+    trustInboundMessages: true,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const response = client.fetchAgentTimeline("agent_cli", {
+    requestId: "req-invalid",
+    timeout: 1000,
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fetch_agent_timeline_response",
+      payload: {
+        requestId: "req-invalid",
+        agentId: "agent_cli",
+        agent: null,
+        direction: "tail",
+        projection: "projected",
+        epoch: "epoch-1",
+        reset: false,
+        staleCursor: false,
+        gap: false,
+        window: { minSeq: 1, maxSeq: 1, nextSeq: 2 },
+        startCursor: { epoch: "epoch-1", seq: 1 },
+        endCursor: { epoch: "epoch-1", seq: 1 },
+        hasOlder: false,
+        hasNewer: false,
+        entries: [
+          {
+            timestamp: "2026-02-08T20:20:00.000Z",
+            provider: "codex",
+            seqStart: 1,
+            seqEnd: 1,
+            sourceSeqRanges: [{ startSeq: 1, endSeq: 1 }],
+            collapsed: [],
+            item: {
+              type: "tool_call",
+              callId: "call_cli_invalid",
+              name: "shell",
+              status: "inProgress",
+              detail: {
+                type: "unknown",
+                input: { command: "pwd" },
+                output: null,
+              },
+            },
+          },
+        ],
+        error: null,
+      },
+    }),
+  );
+
+  await expect(response).resolves.toMatchObject({ requestId: "req-invalid", error: null });
+  expect(warnings).toEqual([]);
 });
 
 test("does not reject a request for an invalid correlated progress event", async () => {

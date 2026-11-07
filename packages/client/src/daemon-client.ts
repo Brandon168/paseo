@@ -49,7 +49,7 @@ import {
   type ActiveTurnBehavior,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
-import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
+import type { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
 import type {
   AgentStreamEventPayload,
   AgentSnapshotPayload,
@@ -133,6 +133,7 @@ import type {
   TerminalInput,
   SessionInboundMessage,
   SessionOutboundMessage,
+  WSOutboundMessage,
   SendAgentMessageRequest,
   PaseoConfigRaw,
   PaseoConfigRevision,
@@ -469,6 +470,32 @@ export interface DaemonClientConfig {
   runtimeMetricsWindowMs?: number;
   trace?: DaemonClientTrace;
   capabilities?: Partial<Record<ClientCapability, unknown>>;
+  /**
+   * Skip validating daemon messages. Only for a client whose daemon is the same build in the
+   * same installation (a plugin's IPC session), where validation cannot reject anything and its
+   * generated validators would cost the process ~65-120 MB.
+   */
+  trustInboundMessages?: boolean;
+}
+
+type InboundValidator = typeof validateWSOutboundMessage;
+
+// The generated outbound validators are ~10 MB of JavaScript, costing every process that loads
+// them ~65-120 MB. They load once per process, when the first validating client receives a frame,
+// so a process whose clients all trust their daemon (plugin IPC sessions) never pays for them.
+let inboundValidator: InboundValidator | null = null;
+let inboundValidatorLoad: Promise<InboundValidator> | null = null;
+function loadInboundValidator(): Promise<InboundValidator> {
+  inboundValidatorLoad ??= import("@getpaseo/protocol/validation/ws-outbound").then((module) => {
+    inboundValidator = module.validateWSOutboundMessage;
+    return inboundValidator;
+  });
+  return inboundValidatorLoad;
+}
+
+/** Loads the message validators now instead of on the first validated frame. */
+export function preloadDaemonMessageValidators(): Promise<void> {
+  return loadInboundValidator().then(() => undefined);
 }
 
 export interface DaemonClientTrace {
@@ -1446,6 +1473,7 @@ export class DaemonClient {
   private connectTimeout: ReturnType<typeof setTimeout> | null = null;
   private pendingGenericTransportErrorTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
+  private framesAwaitingValidator: Array<{ data: unknown; transport: unknown }> = [];
   private traceConnectionAttempt = 0;
   private shouldReconnect = true;
   private connectPromise: Promise<void> | null = null;
@@ -7373,7 +7401,31 @@ export class DaemonClient {
     this.connectTimeout = null;
   }
 
+  /** Holds every frame, binary included, until the validator has loaded, so order is kept. */
+  private holdUntilValidatorLoads(data: unknown): boolean {
+    if (this.config.trustInboundMessages) return false;
+    if (inboundValidator && this.framesAwaitingValidator.length === 0) return false;
+    this.framesAwaitingValidator.push({ data, transport: this.transport });
+    if (this.framesAwaitingValidator.length > 1) return true;
+    void loadInboundValidator().then(
+      () => {
+        const frames = this.framesAwaitingValidator;
+        this.framesAwaitingValidator = [];
+        for (const frame of frames) {
+          if (frame.transport === this.transport) this.handleTransportMessage(frame.data);
+        }
+        return;
+      },
+      (error: unknown) => {
+        this.framesAwaitingValidator = [];
+        this.logger.error({ err: error }, "Failed to load daemon message validators");
+      },
+    );
+    return true;
+  }
+
   private handleTransportMessage(data: unknown): void {
+    if (this.holdUntilValidatorLoads(data)) return;
     const rawData =
       data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : data;
 
@@ -7415,6 +7467,15 @@ export class DaemonClient {
     }
   }
 
+  private validateInbound(input: unknown): ReturnType<InboundValidator> {
+    // holdUntilValidatorLoads keeps frames back until the validator is set, unless this client
+    // trusts its daemon.
+    if (this.config.trustInboundMessages || !inboundValidator) {
+      return { success: true, data: input as WSOutboundMessage };
+    }
+    return inboundValidator(input);
+  }
+
   private handleJsonPayload(payload: string, rawBytesLength: number | undefined): void {
     const bytes = rawBytesLength ?? payload.length;
     const startMs = perfNow();
@@ -7435,7 +7496,7 @@ export class DaemonClient {
     const validationTrace = this.beginTraceSection("paseo.ws.validate");
     let parsed: ReturnType<typeof validateWSOutboundMessage>;
     try {
-      parsed = validateWSOutboundMessage(parsedJson);
+      parsed = this.validateInbound(parsedJson);
     } finally {
       this.endTraceSection(validationTrace);
     }
