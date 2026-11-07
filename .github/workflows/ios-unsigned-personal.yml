@@ -1,0 +1,89 @@
+# Personal sideload build (Brandon168/paseo fork only): an unsigned iPhone IPA that is
+# signed on hvm with sign-ipa and published to the home ipa store. Not for upstream.
+name: iOS unsigned IPA (personal)
+
+on:
+  push:
+    branches: [ios-voice-fix]
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: github.repository == 'Brandon168/paseo'
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install JS dependencies
+        run: node scripts/npm-retry.mjs ci
+
+      - name: Build app workspace dependencies
+        run: npm run build:app-deps
+
+      - name: Expo prebuild (iOS)
+        working-directory: packages/app
+        env:
+          APP_VARIANT: production
+          CI: "1"
+        run: npx expo prebuild --platform ios --clean --non-interactive
+
+      - name: Build unsigned Release app
+        working-directory: packages/app/ios
+        shell: bash
+        run: |
+          set -o pipefail
+          WS="$(ls -d *.xcworkspace | head -1)"
+          SCHEME="$(basename "$WS" .xcworkspace)"
+          echo "workspace=$WS scheme=$SCHEME"
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > "$RUNNER_TEMP/xcodebuild.log" 2>&1 \
+            || { grep -E "error:|\*\* BUILD" "$RUNNER_TEMP/xcodebuild.log" | tail -60; exit 1; }
+          grep -E "\*\* BUILD" "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Package IPA
+        shell: bash
+        run: |
+          APP="$(ls -d packages/app/ios/build/Build/Products/Release-iphoneos/*.app | head -1)"
+          mkdir -p "$RUNNER_TEMP/out/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/out/Payload/"
+          (cd "$RUNNER_TEMP/out" && zip -qry "$GITHUB_WORKSPACE/paseo-unsigned.ipa" Payload)
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "ref=$GITHUB_REF_NAME"
+            echo "xcode=$(xcodebuild -version | head -1)"
+            echo "bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+            echo "version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+            echo "sha256=$(shasum -a 256 paseo-unsigned.ipa | cut -d' ' -f1)"
+          } > build-info.txt
+          cat build-info.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paseo-unsigned
+          path: |
+            paseo-unsigned.ipa
+            build-info.txt
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore
