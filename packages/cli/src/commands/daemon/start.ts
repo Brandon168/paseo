@@ -8,13 +8,21 @@ export function startCommand(): Command {
   return rejectRemovedLaunchFlags(addLocalDaemonOptions(new Command("start")))
     .description("Start the local daemon from persistent configuration (local operation)")
     .option("--timeout <seconds>", "Readiness deadline (default: 600)")
+    .option(
+      "--runtime <runtime>",
+      "JavaScript runtime for the daemon: node, bun or a path (default: PASEO_DAEMON_RUNTIME, else this CLI's runtime)",
+    )
     .action(withOutput(runStart));
 }
 
 export async function runStart(options: CommandOptions, _command: Command) {
   if (options.daemonTarget.kind !== "instance") throw new Error("Start requires a local home");
   const home = options.daemonTarget.home;
-  const result = await launchLocalDaemon({ home, timeoutMs: parseTimeoutMs(options.timeout) });
+  const result = await launchLocalDaemon({
+    home,
+    timeoutMs: parseTimeoutMs(options.timeout),
+    runtime: typeof options.runtime === "string" ? options.runtime : undefined,
+  });
   const data = {
     action: result.spawned ? "started" : "already_running",
     home,
@@ -37,12 +45,17 @@ export async function runStart(options: CommandOptions, _command: Command) {
 export function daemonRunCommand(): Command {
   return rejectRemovedLaunchFlags(addLocalDaemonOptions(new Command("run")))
     .description("Run a local daemon in the foreground with deployment environment overrides")
+    .option(
+      "--runtime <runtime>",
+      "JavaScript runtime for the daemon: node, bun or a path (default: PASEO_DAEMON_RUNTIME, else this CLI's runtime)",
+    )
     .action(
       withOutput(async (options: CommandOptions, _command: Command) => {
         if (options.daemonTarget.kind !== "instance") throw new Error("Run requires a local home");
         const result = await launchLocalDaemon({
           home: options.daemonTarget.home,
           foreground: true,
+          runtime: typeof options.runtime === "string" ? options.runtime : undefined,
         });
         process.exitCode = result.exitCode ?? 0;
         return {
