@@ -4,7 +4,8 @@
   "description": "Paseo CLI - control your AI coding agents from the command line",
   "license": "Apache-2.0",
   "bin": {
-    "paseo": "bin/paseo"
+    "paseo": "bin/paseo",
+    "paseo-daemon": "bin/paseo-daemon"
   },
   "files": [
     "bin",
