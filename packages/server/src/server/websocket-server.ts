@@ -920,7 +920,10 @@ export class VoiceAssistantWebSocketServer {
   }
 
   private startRuntimeMetricsInterval(): void {
-    this.eventLoopDelayMonitor = monitorEventLoopDelay({ resolution: 10 });
+    // The monitor arms a timer every `resolution` ms for the daemon's whole life: 10 ms woke an
+    // idle daemon ~100 times a second just to feed a 30 s metrics line. 100 ms still catches any
+    // stall longer than that, at a tenth of the wakeups.
+    this.eventLoopDelayMonitor = monitorEventLoopDelay({ resolution: 100 });
     this.eventLoopDelayMonitor.enable();
     const runtimeMetricsInterval = setInterval(() => {
       this.flushRuntimeMetrics();
