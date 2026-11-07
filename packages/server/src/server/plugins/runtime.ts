@@ -9,7 +9,7 @@ import {
   type ProviderStatusRequest,
 } from "@getpaseo/plugin/server/provider";
 import type { PluginHookEvents, PluginHookAgent, AgentToolResult } from "@getpaseo/plugin/server";
-import { loadHookSchemas, validateBeforeRequest, validateBeforeResult } from "./lifecycle/index.js";
+import { validateBeforeRequest, validateBeforeResult } from "./lifecycle/index.js";
 import { fork } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -605,7 +605,6 @@ export class PluginRuntime {
     name: Name,
     input: PluginWireBeforeRequests[Name],
   ): Promise<PluginBeforeResults[Name]> {
-    await loadHookSchemas();
     let request = validateBeforeRequest(name, input);
     const plugins = [...this.plugins.values()].sort((left, right) => {
       return left.id.localeCompare(right.id);

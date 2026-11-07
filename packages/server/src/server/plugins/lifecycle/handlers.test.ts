@@ -1,22 +1,7 @@
-import { beforeAll, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import { createPaseoApi } from "@getpaseo/client";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import {
-  BEFORE_HOOK_NAMES,
-  loadHookSchemas,
-  validateBeforeResult,
-  PluginHookHandlers,
-} from "./index.js";
-
-// Hook schemas load on first use; load them up front so these tests see the steady state.
-beforeAll(async () => {
-  await loadHookSchemas();
-});
-
-test("the before-hook name list matches the hook schemas", async () => {
-  const { beforeSchemas } = await loadHookSchemas();
-  expect([...BEFORE_HOOK_NAMES].sort()).toEqual(Object.keys(beforeSchemas).sort());
-});
+import { validateBeforeResult, PluginHookHandlers } from "./index.js";
 
 const paseo = createPaseoApi(
   new DaemonClient({ url: "ws://127.0.0.1:1/ws", clientId: "lifecycle-unit" }),

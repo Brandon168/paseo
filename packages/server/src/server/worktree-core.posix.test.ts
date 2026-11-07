@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, test, afterEach, beforeAll } from "vitest";
+import { describe, expect, test, afterEach } from "vitest";
 import type { ForgeService } from "../services/forge-service.js";
 import { createGitLabService } from "../services/gitlab-service.js";
 import {
@@ -24,19 +24,10 @@ import {
   getPaseoWorktreeMetadataPath,
   readPaseoWorktreeMetadata,
 } from "../utils/worktree-metadata.js";
-import {
-  loadHookSchemas,
-  validateBeforeRequest,
-  validateBeforeResult,
-} from "./plugins/lifecycle/index.js";
+import { validateBeforeRequest, validateBeforeResult } from "./plugins/lifecycle/index.js";
 import { UnknownBranchError } from "../utils/worktree.js";
 import { createWorktreeCore as createCoreWorktree } from "./worktree-core.js";
 import { isPlatform } from "../test-utils/platform.js";
-
-// validateBeforeRequest is synchronous and needs the lazily loaded hook schemas.
-beforeAll(async () => {
-  await loadHookSchemas();
-});
 
 function createGitHubServiceStub(): ForgeService {
   return {
