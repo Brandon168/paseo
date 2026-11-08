@@ -32,7 +32,8 @@ describe.skipIf(process.platform === "win32")("resolveDaemonRuntime", () => {
     ).toEqual({
       engine: "node",
       command: node,
-      version: "v24.21.0",
+      // Nothing was requested, so it reports the running runtime's version without probing.
+      version: process.version,
     });
   });
 
