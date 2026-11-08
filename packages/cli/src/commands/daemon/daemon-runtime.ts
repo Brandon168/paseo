@@ -31,10 +31,15 @@ function isExecutable(file: string): boolean {
 }
 
 function findOnPath(name: string, env: NodeJS.ProcessEnv): string | null {
-  for (const directory of (env.PATH ?? "").split(path.delimiter)) {
+  // Windows finds `bun` as bun.exe through PATHEXT; access(X_OK) only checks existence there.
+  const extensions =
+    process.platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD").split(";").filter(Boolean) : [""];
+  for (const directory of (env.PATH ?? env.Path ?? "").split(path.delimiter)) {
     if (!directory) continue;
-    const candidate = path.join(directory, name);
-    if (isExecutable(candidate)) return candidate;
+    for (const extension of extensions) {
+      const candidate = path.join(directory, name + extension.toLowerCase());
+      if (isExecutable(candidate)) return candidate;
+    }
   }
   return null;
 }
@@ -96,11 +101,20 @@ function locateRuntime(
 export function resolveDaemonRuntime(options: ResolveOptions = {}): DaemonRuntime {
   const env = options.env ?? process.env;
   const requested = (options.requested ?? env.PASEO_DAEMON_RUNTIME ?? "").trim();
+  const currentEngine = options.currentEngine ?? (process.versions.bun ? "bun" : "node");
+  if (!requested) {
+    // Nothing requested: the daemon runs on this CLI's own runtime, as it always has; no probe.
+    return {
+      engine: currentEngine,
+      command: options.execPath ?? process.execPath,
+      version: currentEngine === "bun" ? (process.versions.bun ?? "") : process.version,
+    };
+  }
   const command = locateRuntime(
     requested,
     env,
     options.execPath ?? process.execPath,
-    options.currentEngine ?? (process.versions.bun ? "bun" : "node"),
+    currentEngine,
   );
   const version = (options.probe ?? probeVersion)(command);
   if (!version) throw new Error(`Runtime ${command} did not report a version`);

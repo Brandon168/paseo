@@ -37,7 +37,11 @@ export async function runStart(options: CommandOptions, _command: Command) {
       idField: "pid" as const,
       columns: [],
       renderHuman: () =>
-        `${result.spawned ? "Started" : "Already running"}: PID ${data.pid}${data.listen ? `, listening on ${data.listen}` : ", not ready"}\nLogs: ${data.logPath}`,
+        `${result.spawned ? "Started" : "Already running"}: PID ${data.pid}${data.listen ? `, listening on ${data.listen}` : ", not ready"}\nLogs: ${data.logPath}` +
+        // A running daemon keeps its runtime; --runtime applies when one is started.
+        (!result.spawned && typeof options.runtime === "string"
+          ? `\n--runtime ${options.runtime} not applied: stop the daemon first to start it on another runtime`
+          : ""),
     },
   };
 }

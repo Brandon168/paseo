@@ -97,3 +97,19 @@ describe.skipIf(process.platform === "win32")("resolveDaemonRuntime", () => {
     ).toThrow("Runtime bun was requested but no bun binary was found on PATH or in ~/.bun/bin");
   });
 });
+
+test("uses this CLI's runtime without probing it when no runtime is requested", () => {
+  const runtime = resolveDaemonRuntime({
+    env: {},
+    execPath: "/opt/node/bin/node",
+    currentEngine: "node",
+    probe: () => {
+      throw new Error("probed");
+    },
+  });
+  expect(runtime).toEqual({
+    engine: "node",
+    command: "/opt/node/bin/node",
+    version: process.version,
+  });
+});

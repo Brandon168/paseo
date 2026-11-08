@@ -31,8 +31,14 @@ const passthrough: string[] = [];
 const args = process.argv.slice(2);
 for (let index = 0; index < args.length; index++) {
   const arg = args[index]!;
-  if (arg === "--home") process.env.PASEO_HOME = args[++index];
-  else if (arg.startsWith("--home=")) process.env.PASEO_HOME = arg.slice("--home=".length);
+  if (arg === "--home") {
+    const value = args[++index];
+    if (!value) {
+      process.stderr.write("paseo-daemon: --home needs a directory\n");
+      process.exit(2);
+    }
+    process.env.PASEO_HOME = value;
+  } else if (arg.startsWith("--home=")) process.env.PASEO_HOME = arg.slice("--home=".length);
   else passthrough.push(arg);
 }
 const home = process.env.PASEO_HOME;
