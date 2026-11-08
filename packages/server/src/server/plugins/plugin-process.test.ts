@@ -48,3 +48,13 @@ it("exposes CLI probes through the plugin host's server SDK", async () => {
   // This contribution uses no server context APIs; it exercises the host's real SDK binding.
   await expect(setup(undefined as never)).resolves.toBeUndefined();
 });
+
+it("gives a bundle that requires the ACP runtime the host's module once prepared", async () => {
+  const { evaluateBundle, prepareBundleRuntime } = await import("./bundle-evaluator.js");
+  const bundle = `(require) => ({ default: () => Object.keys(require("@getpaseo/plugin/server/acp")) })`;
+  await prepareBundleRuntime(bundle);
+  const setup = evaluateBundle(bundle) as unknown as () => string[];
+  const host = await import("@getpaseo/plugin/server/acp");
+  expect(setup()).toEqual(Object.keys(host));
+  expect(setup().length).toBeGreaterThan(0);
+});

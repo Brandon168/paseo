@@ -1,6 +1,6 @@
 import { PluginAgentTools } from "./agent-tools.js";
 import { PluginHookHandlers } from "./lifecycle/index.js";
-import { evaluateBundle } from "./bundle-evaluator.js";
+import { evaluateBundle, prepareBundleRuntime } from "./bundle-evaluator.js";
 import {
   PluginProcessRequestSchema,
   type PluginProcessMessage,
@@ -24,8 +24,12 @@ import {
 } from "./subscription-handlers.js";
 import { fileURLToPath } from "node:url";
 import type { ZodType } from "zod";
-import type { ProviderConnection, ProviderRegistration } from "@getpaseo/plugin/server/provider";
-import { pluginSdkRuntime } from "./plugin-sdk-runtime.js";
+import {
+  ProviderEventSchema,
+  type ProviderConnection,
+  type ProviderRegistration,
+  ProviderStatusSchema,
+} from "@getpaseo/plugin/server/provider";
 import { createPaseoApi, type PaseoApi } from "@getpaseo/client";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { createPluginDaemonTransportFactory } from "./daemon-transport.js";
@@ -235,9 +239,7 @@ export function createPluginWorker(options: {
         send({
           type: "provider.event",
           connectionId: message.connectionId,
-          event: pluginSdkRuntime("@getpaseo/plugin/server/provider").ProviderEventSchema.parse(
-            jsonTransportValue(event),
-          ),
+          event: ProviderEventSchema.parse(jsonTransportValue(event)),
         });
       } catch (error) {
         providerConnections.delete(message.connectionId);
@@ -521,9 +523,7 @@ export function createPluginWorker(options: {
         const provider = providers.get(message.providerId);
         if (!provider || !provider.status)
           throw new Error(`Provider has no status capability: ${message.providerId}`);
-        const output = pluginSdkRuntime(
-          "@getpaseo/plugin/server/provider",
-        ).ProviderStatusSchema.parse(await provider.status(message.request));
+        const output = ProviderStatusSchema.parse(await provider.status(message.request));
         send({ type: "result", requestId: message.requestId, output });
       })().catch((error) =>
         send({ type: "error", requestId: message.requestId, error: describeError(error) }),
@@ -665,17 +665,38 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.disconnect();
     },
   };
+  // Messages that arrive while the bundle's runtimes load wait here, in order.
+  let preparing: unknown[] | null = null;
+  const deliver = (message: unknown) => {
+    if (worker) for (const handler of handlers) handler(message as PluginProcessRequest);
+  };
   process.on("message", (raw) => {
-    const parsed = PluginProcessRequestSchema.safeParse(raw);
-    if (!worker && parsed.success && parsed.data.type === "initialize") {
-      try {
-        initializeEnvironmentProxy();
-        worker = createPluginWorker({ channel, contribute: evaluateBundle(parsed.data.bundle) });
-      } catch (error) {
-        channel.send({ type: "fatal", error: describeError(error) });
-        return;
-      }
+    if (preparing) {
+      preparing.push(raw);
+      return;
     }
-    if (worker) for (const handler of handlers) handler(raw as PluginProcessRequest);
+    const parsed = PluginProcessRequestSchema.safeParse(raw);
+    if (worker || !parsed.success || parsed.data.type !== "initialize") {
+      deliver(raw);
+      return;
+    }
+    const { bundle } = parsed.data;
+    preparing = [raw];
+    void prepareBundleRuntime(bundle)
+      // A failed load is reported by evaluateBundle, which retries it synchronously.
+      .catch(() => {})
+      .then(() => {
+        const queued = preparing ?? [];
+        preparing = null;
+        try {
+          initializeEnvironmentProxy();
+          worker = createPluginWorker({ channel, contribute: evaluateBundle(bundle) });
+        } catch (error) {
+          channel.send({ type: "fatal", error: describeError(error) });
+          return;
+        }
+        for (const message of queued) deliver(message);
+        return;
+      });
   });
 }
