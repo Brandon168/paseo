@@ -191,6 +191,10 @@ async function connectSelectedDaemon(options: ConnectOptions): Promise<DaemonCli
         ).listen;
   const home = resolveClientPaseoHome(options.target);
   const credential = resolveDaemonCredential(host, home);
+  // Validate from the first frame, as the CLI always has. Imported here rather than at the top so
+  // `paseo daemon run`, which stays resident and never connects, does not load the validators.
+  const { enableEagerValidation } = await import("@getpaseo/client/eager-validation");
+  enableEagerValidation();
   const client = createHostClient(host, {
     clientId: await getOrCreateCliClientId(home),
     clientType: "cli",
