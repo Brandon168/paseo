@@ -1113,6 +1113,8 @@ export async function startWorkerTerminalManager(
 
   await closeOtherEngineWorkers({
     paseoHome: options.paseoHome,
+    // It cannot decode this runtime's frames, so a graceful shutdown would only wait out its window.
+    gracefulMs: 0,
     recordPaths: otherEngine,
     inspector,
     log,

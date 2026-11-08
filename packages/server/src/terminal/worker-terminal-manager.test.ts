@@ -1652,8 +1652,14 @@ it("closes a worker started by the other JavaScript runtime instead of adopting 
     recordPath,
     JSON.stringify({ ...JSON.parse(readFileSync(recordPath, "utf8")), engine: otherEngine }),
   );
+  // A real other-engine worker accepts the connection but cannot decode the shutdown request;
+  // a stopped worker behaves the same way.
+  process.kill(old.workerPid, "SIGSTOP");
 
+  const startedAt = Date.now();
   manager = await startRealWorkerManager({ paseoHome });
+  // Startup must not wait out a graceful-shutdown window the worker can never honour.
+  expect(Date.now() - startedAt).toBeLessThan(4000);
 
   await waitForCondition(() => !isProcessAlive(old.workerPid), 10000);
   await waitForCondition(() => !isProcessAlive(old.programPid), 10000);
