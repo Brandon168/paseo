@@ -31,6 +31,11 @@ interface LoopUtilization {
 
 export interface EventLoopDelaySources {
   createMonitor(resolutionMs: number): DelayHistogram;
+  /**
+   * Whether recorded values include the sampling interval. Node records the time between samples
+   * (resolution + lateness: ~100 ms for an idle loop at 100 ms); Bun records only the lateness.
+   */
+  recordsInterval: boolean;
   /** Cumulative loop idle/active milliseconds, as performance.eventLoopUtilization() reports. */
   loopUtilization(): LoopUtilization;
   /** Cumulative process CPU time in microseconds. */
@@ -40,6 +45,7 @@ export interface EventLoopDelaySources {
 
 const defaultSources: EventLoopDelaySources = {
   createMonitor: (resolution) => monitorEventLoopDelay({ resolution }),
+  recordsInterval: !process.versions.bun,
   loopUtilization: () => performance.eventLoopUtilization(),
   cpuMicros: () => {
     const usage = process.cpuUsage();
@@ -52,7 +58,8 @@ const defaultSources: EventLoopDelaySources = {
  * Event-loop delay percentiles for the runtime metrics line. The underlying monitor arms a timer
  * every `resolution` ms for the daemon's whole life, which is most of an idle daemon's wakeups.
  * So it samples every 100 ms while the loop is busy and every 1000 ms while a whole window was
- * idle. A stall makes its window busy, so the next window is sampled finely again.
+ * idle. A stall makes its window busy, so the next window is sampled finely again. Values are the
+ * lateness of each sample, on every runtime and at either resolution.
  */
 export class AdaptiveEventLoopDelayMonitor {
   private monitor: DelayHistogram;
@@ -71,7 +78,9 @@ export class AdaptiveEventLoopDelayMonitor {
 
   /** Percentiles since the last snapshot; then picks the resolution for the next window. */
   snapshot(): EventLoopDelaySnapshot {
-    const toMs = (nanoseconds: number): number => Math.round(nanoseconds / 1e5) / 10;
+    const intervalNs = this.sources.recordsInterval ? this.resolution * 1e6 : 0;
+    const toMs = (nanoseconds: number): number =>
+      Math.round(Math.max(0, nanoseconds - intervalNs) / 1e5) / 10;
     const snapshot = {
       p50Ms: toMs(this.monitor.percentile(50)),
       p99Ms: toMs(this.monitor.percentile(99)),
