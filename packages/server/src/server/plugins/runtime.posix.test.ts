@@ -105,6 +105,10 @@ function createReloadChild(
     emitMessage(message: unknown) {
       emit("message", message);
     },
+    emitClose() {
+      this.connected = false;
+      emit("close", null);
+    },
   };
 }
 
@@ -1026,6 +1030,33 @@ export default function contribute(server: any) { server.registerProvider(provid
 
     expect(events).toEqual(["start:old", "shutdown:old", "exit:old", "start:new"]);
     await runtime.stopAll();
+  });
+
+  it("finishes stopping a plugin whose shutdown message is never acknowledged", async () => {
+    // Bun never calls back a send() whose IPC channel closes mid-write, which is what happens
+    // when the service manager signals the whole process group at once on stop.
+    const directory = await createPlugin(
+      "unacknowledged",
+      `export default function contribute(plugin: unknown) { void plugin; return () => undefined; }`,
+    );
+    const events: string[] = [];
+    const child = createReloadChild("unacknowledged", events);
+    const deliver = child.send.bind(child);
+    child.send = (message, callback) => {
+      if (message.type !== "shutdown") return deliver(message, callback);
+      queueMicrotask(() => child.emitClose());
+      return true;
+    };
+    const runtime = createTestRuntime({ spawnChild: () => child });
+    await runtime.startPlugin("unacknowledged", directory);
+
+    const outcome = await Promise.race([
+      runtime.stopAll().then(() => "stopped"),
+      new Promise((resolve) => setTimeout(() => resolve("still stopping"), 3_000)),
+    ]);
+
+    expect(outcome).toBe("stopped");
+    expect(pluginMessages(runtime, "unacknowledged")).toContain("[paseo] Plugin stopped");
   });
 
   it("rejects pending RPCs when the plugin stops", async () => {

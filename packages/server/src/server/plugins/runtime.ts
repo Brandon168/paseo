@@ -1409,15 +1409,18 @@ export class PluginRuntime {
         resolve();
       }),
     );
-    if (child.connected) {
-      await send(child, { type: "shutdown" }).catch(() => undefined);
-    }
+    // Arm the fallback before sending, and stop waiting for the send once the child has closed:
+    // Bun never calls back a send() whose channel closes mid-write, which is what happens when
+    // the service manager signals the whole process group on stop.
     let forceTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       if (!child.killed) child.kill("SIGTERM");
       forceTimer = setTimeout(() => {
         child.kill("SIGKILL");
       }, SOFT_SHUTDOWN_TIMEOUT_MS);
     }, SOFT_SHUTDOWN_TIMEOUT_MS);
+    if (child.connected) {
+      await Promise.race([send(child, { type: "shutdown" }).catch(() => undefined), closed]);
+    }
     await closed.finally(() => {
       if (forceTimer) clearTimeout(forceTimer);
     });
