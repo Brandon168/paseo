@@ -643,6 +643,43 @@ describe("ScheduleService", () => {
     }
   });
 
+  test("does not keep waking for an active schedule without a next run", async () => {
+    const list = vi.spyOn(ScheduleStore.prototype, "list");
+    const service = createScheduleService({
+      paseoHome: tempDir,
+      logger: createTestLogger(),
+      agentManager: new AgentManager({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      runner: async () => ({ agentId: null, output: "ok" }),
+      wakeBoundsMs: { min: 10, max: 60_000 },
+    });
+    const created = await service.create({
+      prompt: "Expired without a next slot",
+      runOnCreate: false,
+      cadence: { type: "every", everyMs: 3_600_000 },
+      target: { type: "new-agent", config: { provider: "claude", cwd: tempDir } },
+    });
+    // tick() skips a schedule with no next run, so planning must skip it too.
+    const store = new ScheduleStore(join(tempDir, "schedules"), createTestLogger());
+    await store.update(created.id, (schedule) => ({
+      ...schedule,
+      nextRunAt: null,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    }));
+    try {
+      await service.start();
+      const afterStart = list.mock.calls.length;
+      await vi.waitFor(() => expect(list.mock.calls.length).toBeGreaterThanOrEqual(afterStart + 2));
+      const settled = list.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(list.mock.calls.length).toBe(settled);
+    } finally {
+      await service.stop();
+      list.mockRestore();
+    }
+  });
+
   test("runs a schedule created while the service sleeps without waiting for the next wake", async () => {
     const ran = Promise.withResolvers<void>();
     const service = createScheduleService({

@@ -34,6 +34,7 @@ import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 // changed outside the daemon has no event, so this bounds how late either can make a run.
 const SCHEDULE_MIN_WAKE_MS = 1000;
 const SCHEDULE_MAX_WAKE_MS = 30_000;
+const SCHEDULE_WAKE_MARGIN_MS = 25;
 
 // A run failed because its target no longer exists: the agent was deleted or
 // archived, or a new-agent cwd was removed. These are permanent, so the schedule
@@ -382,7 +383,12 @@ export class ScheduleService {
     const now = this.now();
     let wakeAt = now.getTime() + this.wakeBoundsMs.max;
     for (const schedule of await this.store.list()) {
-      if (schedule.status !== "active" || this.runningScheduleIds.has(schedule.id)) {
+      // Same filter as tick(): a schedule it would skip must not cause a wake either.
+      if (
+        schedule.status !== "active" ||
+        !schedule.nextRunAt ||
+        this.runningScheduleIds.has(schedule.id)
+      ) {
         continue;
       }
       if (shouldCompleteSchedule(schedule, now)) {
@@ -394,7 +400,9 @@ export class ScheduleService {
       }
     }
     const { min, max } = this.wakeBoundsMs;
-    return Math.min(max, Math.max(min, wakeAt - now.getTime()));
+    // Timers can fire a little early; waking just after the due time keeps the run on this tick
+    // instead of the next one.
+    return Math.min(max, Math.max(min, wakeAt - now.getTime() + SCHEDULE_WAKE_MARGIN_MS));
   }
 
   async create(input: CreateScheduleInput): Promise<StoredSchedule> {
