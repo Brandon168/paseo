@@ -18,7 +18,14 @@ export function registerProtocolSchemas(module: ProtocolSchemas): void {
 }
 
 export function loadProtocolSchemas(): Promise<ProtocolSchemas> {
-  schemasLoad ??= import("@getpaseo/protocol/messages").then((module) => (schemas = module));
+  schemasLoad ??= import("@getpaseo/protocol/messages").then(
+    (module) => (schemas = module),
+    (error: unknown) => {
+      // Forget the failure so a later call tries again.
+      schemasLoad = null;
+      throw error;
+    },
+  );
   return schemasLoad;
 }
 

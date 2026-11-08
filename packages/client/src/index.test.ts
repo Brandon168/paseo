@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { createPaseoApi, createPaseoClient } from "./index.js";
-import { DaemonClient } from "./daemon-client.js";
+import { DaemonClient, preloadDaemonMessageValidators } from "./daemon-client.js";
 import type { PaseoAgent, PaseoClient, PaseoWorkspace } from "./index.js";
+
+// Validating clients hold frames until the validators load; a cold load outlasts short timeouts.
+beforeAll(() => preloadDaemonMessageValidators(), 60_000);
 
 type FakeWebSocketHandler = (...args: unknown[]) => void;
 

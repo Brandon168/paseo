@@ -44,7 +44,11 @@ import type {
   ActiveTurnBehavior,
   ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
-import { loadedProtocolSchemas, loadProtocolSchemas } from "./protocol-schemas.js";
+import {
+  loadedProtocolSchemas,
+  loadProtocolSchemas,
+  type ProtocolSchemas,
+} from "./protocol-schemas.js";
 import type { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
 import type {
   AgentStreamEventPayload,
@@ -489,10 +493,17 @@ type InboundValidator = typeof validateWSOutboundMessage;
 let inboundValidator: InboundValidator | null = null;
 let inboundValidatorLoad: Promise<InboundValidator> | null = null;
 function loadInboundValidator(): Promise<InboundValidator> {
-  inboundValidatorLoad ??= import("@getpaseo/protocol/validation/ws-outbound").then((module) => {
-    inboundValidator = module.validateWSOutboundMessage;
-    return inboundValidator;
-  });
+  inboundValidatorLoad ??= import("@getpaseo/protocol/validation/ws-outbound").then(
+    (module) => {
+      inboundValidator = module.validateWSOutboundMessage;
+      return inboundValidator;
+    },
+    (error: unknown) => {
+      // Forget the failure so the next frame or reconnect tries again instead of staying deaf.
+      inboundValidatorLoad = null;
+      throw error;
+    },
+  );
   return inboundValidatorLoad;
 }
 
@@ -513,6 +524,58 @@ function validateOutbound(message: unknown): SessionInboundMessage {
 export function registerDaemonMessageValidator(validator: InboundValidator): void {
   inboundValidator ??= validator;
   inboundValidatorLoad ??= Promise.resolve(inboundValidator);
+}
+
+function buildLegacyCreateAgentRequest(
+  options: CreateAgentRequestOptions,
+  requestId: string,
+  config: ReturnType<typeof resolveAgentConfig>,
+): Record<string, unknown> {
+  return {
+    type: "create_agent_request",
+    requestId,
+    config,
+    ...(options.env ? { env: options.env } : {}),
+    ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
+    ...(options.callerAgentId !== undefined ? { callerAgentId: options.callerAgentId } : {}),
+    ...(options.initialPrompt ? { initialPrompt: options.initialPrompt } : {}),
+    idempotencyKey: options.idempotencyKey,
+    ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+    ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
+    ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
+    ...(options.attachments && options.attachments.length > 0
+      ? { attachments: options.attachments }
+      : {}),
+    ...(options.git ? { git: options.git } : {}),
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
+    ...(options.background !== undefined ? { background: options.background } : {}),
+    ...(options.worktreeName ? { worktreeName: options.worktreeName } : {}),
+    ...(options.labels && Object.keys(options.labels).length > 0 ? { labels: options.labels } : {}),
+  };
+}
+
+type ReplyParse<T> = { success: true; data: T } | { success: false };
+
+/**
+ * Matches a reply with the protocol schema when this client validates. A trusted client (no
+ * schemas) matches on the reply's discriminant fields instead: it already takes its daemon's
+ * messages as they are, and it should neither wait for nor load ~90 MB of schemas to read a reply.
+ */
+function parseReply<T>(
+  schemas: ProtocolSchemas | null,
+  pick: (schemas: ProtocolSchemas) => {
+    safeParse(input: unknown): { success: true; data: T } | { success: false };
+  },
+  value: unknown,
+  discriminant: Record<string, string>,
+): ReplyParse<T> {
+  if (schemas) return pick(schemas).safeParse(value);
+  if (!value || typeof value !== "object") return { success: false };
+  for (const [key, expected] of Object.entries(discriminant)) {
+    if ((value as Record<string, unknown>)[key] !== expected) return { success: false };
+  }
+  return { success: true, data: value as T };
 }
 
 /** Loads the message validators now instead of on the first validated frame. */
@@ -3579,32 +3642,12 @@ export class DaemonClient {
     const requestId = this.createRequestId(options.requestId);
     const config = resolveAgentConfig(options);
 
-    const message = validateOutbound({
-      type: "create_agent_request",
-      requestId,
-      config,
-      ...(options.env ? { env: options.env } : {}),
-      ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
-      ...(options.callerAgentId !== undefined ? { callerAgentId: options.callerAgentId } : {}),
-      ...(options.initialPrompt ? { initialPrompt: options.initialPrompt } : {}),
-      idempotencyKey: options.idempotencyKey,
-      ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
-      ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
-      ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
-      ...(options.attachments && options.attachments.length > 0
-        ? { attachments: options.attachments }
-        : {}),
-      ...(options.git ? { git: options.git } : {}),
-      ...(options.worktree ? { worktree: options.worktree } : {}),
-      ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
-      ...(options.background !== undefined ? { background: options.background } : {}),
-      ...(options.worktreeName ? { worktreeName: options.worktreeName } : {}),
-      ...(options.labels && Object.keys(options.labels).length > 0
-        ? { labels: options.labels }
-        : {}),
-    });
+    const message = validateOutbound(buildLegacyCreateAgentRequest(options, requestId, config));
 
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     const status = await this.sendRequest({
       requestId,
       message,
@@ -3613,11 +3656,18 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const created = schemas.AgentCreatedStatusPayloadSchema.safeParse(msg.payload);
+        const created = parseReply(schemas, (s) => s.AgentCreatedStatusPayloadSchema, msg.payload, {
+          status: "agent_created",
+        });
         if (created.success && created.data.requestId === requestId) {
           return created.data;
         }
-        const failed = schemas.AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
+        const failed = parseReply(
+          schemas,
+          (s) => s.AgentCreateFailedStatusPayloadSchema,
+          msg.payload,
+          { status: "agent_create_failed" },
+        );
         if (failed.success && failed.data.requestId === requestId) {
           return failed.data;
         }
@@ -3923,7 +3973,10 @@ export class DaemonClient {
       ...(overrides ? { overrides } : {}),
     });
 
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     const status = await this.sendRequest({
       requestId,
       message,
@@ -3932,7 +3985,9 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const resumed = schemas.AgentResumedStatusPayloadSchema.safeParse(msg.payload);
+        const resumed = parseReply(schemas, (s) => s.AgentResumedStatusPayloadSchema, msg.payload, {
+          status: "agent_resumed",
+        });
         if (resumed.success && resumed.data.requestId === requestId) {
           return resumed.data;
         }
@@ -3956,7 +4011,10 @@ export class DaemonClient {
       ...(input.labels && Object.keys(input.labels).length > 0 ? { labels: input.labels } : {}),
     });
 
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     const status = await this.sendRequest({
       requestId,
       message,
@@ -3965,12 +4023,19 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const resumed = schemas.AgentResumedStatusPayloadSchema.safeParse(msg.payload);
+        const resumed = parseReply(schemas, (s) => s.AgentResumedStatusPayloadSchema, msg.payload, {
+          status: "agent_resumed",
+        });
         if (resumed.success && resumed.data.requestId === requestId) {
           return resumed.data;
         }
 
-        const failed = schemas.AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
+        const failed = parseReply(
+          schemas,
+          (s) => s.AgentCreateFailedStatusPayloadSchema,
+          msg.payload,
+          { status: "agent_create_failed" },
+        );
         if (failed.success && failed.data.requestId === requestId) {
           return failed.data;
         }
@@ -3993,7 +4058,10 @@ export class DaemonClient {
       agentId,
       requestId: resolvedRequestId,
     });
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -4002,7 +4070,12 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const refreshed = schemas.AgentRefreshedStatusPayloadSchema.safeParse(msg.payload);
+        const refreshed = parseReply(
+          schemas,
+          (s) => s.AgentRefreshedStatusPayloadSchema,
+          msg.payload,
+          { status: "agent_refreshed" },
+        );
         if (refreshed.success && refreshed.data.requestId === resolvedRequestId) {
           return refreshed.data;
         }
@@ -4623,7 +4696,10 @@ export class DaemonClient {
       requestId: resolvedRequestId,
       ...(options?.killTerminals ? { killTerminals: true } : {}),
     });
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -4633,7 +4709,12 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const restarted = schemas.RestartRequestedStatusPayloadSchema.safeParse(msg.payload);
+        const restarted = parseReply(
+          schemas,
+          (s) => s.RestartRequestedStatusPayloadSchema,
+          msg.payload,
+          { status: "restart_requested" },
+        );
         if (!restarted.success) {
           return null;
         }
@@ -4652,7 +4733,10 @@ export class DaemonClient {
       requestId: resolvedRequestId,
       ...(options?.keepTerminals ? { keepTerminals: true } : {}),
     });
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -4662,7 +4746,12 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const shutdown = schemas.ShutdownRequestedStatusPayloadSchema.safeParse(msg.payload);
+        const shutdown = parseReply(
+          schemas,
+          (s) => s.ShutdownRequestedStatusPayloadSchema,
+          msg.payload,
+          { status: "shutdown_requested" },
+        );
         if (!shutdown.success) {
           return null;
         }
@@ -4680,14 +4769,19 @@ export class DaemonClient {
       type: "daemon.update.request",
       requestId: resolvedRequestId,
     });
-    const schemas = loadedProtocolSchemas() ?? (await loadProtocolSchemas());
+    // No await for a trusted client, so the request goes out before any later one.
+    const schemas = this.config.trustInboundMessages
+      ? null
+      : (loadedProtocolSchemas() ?? (await loadProtocolSchemas()));
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
       timeout: 300_000, // 5 minutes — npm update can be slow on remote machines
       options: { skipQueue: true },
       select: (msg) => {
-        const parsed = schemas.DaemonUpdateResponseSchema.safeParse(msg);
+        const parsed = parseReply(schemas, (s) => s.DaemonUpdateResponseSchema, msg, {
+          type: "daemon.update.response",
+        });
         if (!parsed.success) {
           return null;
         }
