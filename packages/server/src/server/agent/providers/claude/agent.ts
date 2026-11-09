@@ -5315,6 +5315,21 @@ class ClaudeAgentSession implements AgentSession {
     if (toolName === "ExitPlanMode" && typeof input.plan === "string") {
       metadata.planText = input.plan;
     }
+    // Claude explains why it asked (for example a safety check that Bypass mode
+    // does not skip). Show it on the card and keep it for plugins and clients.
+    const decisionReason = readNonEmptyString(options.decisionReason)?.trim() ?? null;
+    if (decisionReason) {
+      metadata.decisionReason = decisionReason;
+    }
+    const blockedPath = readNonEmptyString(options.blockedPath);
+    if (blockedPath) {
+      metadata.blockedPath = blockedPath;
+    }
+    if (options.matchedAskRule) {
+      metadata.matchedAskRule = { ...options.matchedAskRule };
+    }
+    const summary = buildClaudeQuestionPermissionSummary(toolName, input);
+    const description = summary.description ?? decisionReason ?? undefined;
     const toolDetail =
       kind === "tool"
         ? mapClaudeRunningToolCall({
@@ -5330,7 +5345,8 @@ class ClaudeAgentSession implements AgentSession {
       provider: "claude",
       name: toolName,
       kind,
-      ...buildClaudeQuestionPermissionSummary(toolName, input),
+      ...summary,
+      ...(description ? { description } : {}),
       input: requestInput,
       detail: toolDetail,
       suggestions: options.suggestions?.map((suggestion) => ({

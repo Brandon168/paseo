@@ -4554,6 +4554,7 @@ describe("Claude question permission notifications", () => {
   async function requestPermission(
     toolName: string,
     input: Record<string, unknown>,
+    options: Record<string, unknown> = {},
   ): Promise<Extract<AgentStreamEvent, { type: "permission_requested" }>["request"]> {
     const client = new ClaudeAgentClient({
       logger: createTestLogger(),
@@ -4571,7 +4572,7 @@ describe("Claude question permission notifications", () => {
           options: Record<string, unknown>,
         ) => Promise<unknown>;
       };
-      void internal.handlePermissionRequest(toolName, input, {}).catch(() => undefined);
+      void internal.handlePermissionRequest(toolName, input, options).catch(() => undefined);
 
       const requested = events.find(
         (event): event is Extract<AgentStreamEvent, { type: "permission_requested" }> =>
@@ -4657,6 +4658,71 @@ describe("Claude question permission notifications", () => {
 
     expect(request.title).toBeUndefined();
     expect(request.description).toBeUndefined();
+  });
+
+  // Regression for #6923: in Bypass mode Claude Code still asks for some
+  // safety checks, and the card never said why because the SDK's
+  // decisionReason was dropped.
+  describe("decision reason", () => {
+    const rmCheckReason =
+      "This command could not be checked for dangerous rm operations: the shell may read it differently than it was parsed. This requires explicit approval.";
+
+    test("shows Claude's reason as the card description and keeps it in metadata", async () => {
+      const request = await requestPermission(
+        "Bash",
+        { command: "echo 'a $$(b) c'" },
+        { toolUseID: "tool-6923", decisionReason: `  ${rmCheckReason}\n` },
+      );
+
+      expect(request.description).toBe(rmCheckReason);
+      expect(request.metadata).toEqual({ toolUseId: "tool-6923", decisionReason: rmCheckReason });
+    });
+
+    test("carries the blocked path and the ask rule that forced the prompt", async () => {
+      const request = await requestPermission(
+        "Bash",
+        { command: "cat ~/secret" },
+        {
+          decisionReason: "Path is outside allowed directories",
+          blockedPath: "/home/user/secret",
+          matchedAskRule: { source: "userSettings", toolName: "Bash", ruleContent: "cat:*" },
+        },
+      );
+
+      expect(request.metadata).toMatchObject({
+        decisionReason: "Path is outside allowed directories",
+        blockedPath: "/home/user/secret",
+        matchedAskRule: { source: "userSettings", toolName: "Bash", ruleContent: "cat:*" },
+      });
+    });
+
+    test("keeps the question summary for AskUserQuestion", async () => {
+      const request = await requestPermission(
+        "AskUserQuestion",
+        {
+          questions: [
+            {
+              question: "Which library should we use?",
+              header: "Library",
+              options: [{ label: "date-fns" }, { label: "Luxon" }],
+              multiSelect: false,
+            },
+          ],
+        },
+        { decisionReason: "Tool requires user input" },
+      );
+
+      expect(request.title).toBe("Which library should we use?");
+      expect(request.description).toBe("date-fns / Luxon");
+      expect(request.metadata).toMatchObject({ decisionReason: "Tool requires user input" });
+    });
+
+    test("ignores a blank reason", async () => {
+      const request = await requestPermission("Bash", { command: "ls" }, { decisionReason: "   " });
+
+      expect(request.description).toBeUndefined();
+      expect(request.metadata).toBeUndefined();
+    });
   });
 });
 
