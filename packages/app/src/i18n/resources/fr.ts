@@ -160,6 +160,7 @@ export const fr: TranslationResources = {
     },
     attachments: {
       addImage: "Ajouter une image",
+      takePhoto: "Prendre une photo",
       pasteImage: "Coller une image",
       addFile: "Importer un fichier",
       addIssueOrPr: "Ajouter un ticket ou une PR",
@@ -1670,8 +1671,11 @@ export const fr: TranslationResources = {
   imageAttachmentPicker: {
     permissionTitle: "Autorisation requise",
     permissionMessage: "Autorisez l’accès à votre photothèque pour joindre des images.",
+    cameraPermissionMessage:
+      "Autorisez l’accès à l’appareil photo pour prendre une photo à joindre.",
     errorTitle: "Erreur",
     failedToSelect: "Impossible de sélectionner l’image",
+    failedToCapture: "Impossible de prendre la photo",
     dialogTitle: "Joindre des images",
     dialogFilterName: "Images",
   },

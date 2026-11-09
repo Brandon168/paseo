@@ -158,6 +158,7 @@ export const zhCN: TranslationResources = {
     },
     attachments: {
       addImage: "添加图片",
+      takePhoto: "拍照",
       pasteImage: "粘贴图片",
       addFile: "Upload file",
       addIssueOrPr: "添加 issue 或 PR",
@@ -1609,8 +1610,10 @@ export const zhCN: TranslationResources = {
   imageAttachmentPicker: {
     permissionTitle: "需要权限",
     permissionMessage: "请允许访问照片图库以附加图片。",
+    cameraPermissionMessage: "请允许访问相机以拍摄要附加的照片。",
     errorTitle: "错误",
     failedToSelect: "选择图片失败",
+    failedToCapture: "拍照失败",
     dialogTitle: "附加图片",
     dialogFilterName: "图片",
   },

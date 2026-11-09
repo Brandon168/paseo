@@ -159,6 +159,7 @@ export const ru: TranslationResources = {
     },
     attachments: {
       addImage: "Добавить изображение",
+      takePhoto: "Сделать фото",
       pasteImage: "Вставить изображение",
       addFile: "Загрузить файл",
       addIssueOrPr: "Добавить проблему или PR",
@@ -1656,8 +1657,10 @@ export const ru: TranslationResources = {
   imageAttachmentPicker: {
     permissionTitle: "Требуется разрешение",
     permissionMessage: "Разрешите доступ к медиатеке, чтобы прикреплять изображения.",
+    cameraPermissionMessage: "Разрешите доступ к камере, чтобы сделать фото для вложения.",
     errorTitle: "Ошибка",
     failedToSelect: "Не удалось выбрать изображение",
+    failedToCapture: "Не удалось сделать фото",
     dialogTitle: "Прикрепить изображения",
     dialogFilterName: "Изображения",
   },

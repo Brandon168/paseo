@@ -159,6 +159,7 @@ export const ja: TranslationResources = {
     },
     attachments: {
       addImage: "画像を追加",
+      takePhoto: "写真を撮る",
       pasteImage: "画像を貼り付け",
       addFile: "ファイルをアップロード",
       addIssueOrPr: "イシューまたはPRを追加",
@@ -1644,8 +1645,10 @@ export const ja: TranslationResources = {
   imageAttachmentPicker: {
     permissionTitle: "権限が必要です",
     permissionMessage: "画像を添付するにはフォトライブラリへのアクセスを許可してください。",
+    cameraPermissionMessage: "添付する写真を撮るには、カメラへのアクセスを許可してください。",
     errorTitle: "エラー",
     failedToSelect: "画像の選択に失敗しました",
+    failedToCapture: "写真を撮影できませんでした",
     dialogTitle: "画像を添付",
     dialogFilterName: "画像",
   },
