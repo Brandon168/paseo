@@ -159,6 +159,7 @@ export const ptBR: TranslationResources = {
     },
     attachments: {
       addImage: "Adicionar imagem",
+      takePhoto: "Tirar foto",
       pasteImage: "Colar imagem",
       addFile: "Enviar arquivo",
       addIssueOrPr: "Adicionar issue ou PR",
@@ -1658,8 +1659,10 @@ export const ptBR: TranslationResources = {
   imageAttachmentPicker: {
     permissionTitle: "Permissão obrigatória",
     permissionMessage: "Permita acesso à sua biblioteca de fotos para anexar imagens.",
+    cameraPermissionMessage: "Permita o acesso à câmera para tirar uma foto e anexá-la.",
     errorTitle: "Erro",
     failedToSelect: "Falha ao selecionar imagem",
+    failedToCapture: "Não foi possível tirar a foto",
     dialogTitle: "Anexar imagens",
     dialogFilterName: "Imagens",
   },
