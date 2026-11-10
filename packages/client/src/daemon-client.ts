@@ -476,13 +476,6 @@ export interface DaemonClientConfig {
    * generated validators would cost the process ~65-120 MB.
    */
   trustInboundMessages?: boolean;
-  /**
-   * Ping the daemon every 10 s and reconnect after missed replies (default true). Turn it off
-   * only where the transport reports its own loss (a plugin's IPC channel, an in-process
-   * channel): there a ping cannot find a dead link the channel would not, and it costs both
-   * processes a wakeup per client every 10 s.
-   */
-  livenessHeartbeat?: boolean;
 }
 
 type InboundValidator = typeof validateWSOutboundMessage;
@@ -2836,11 +2829,7 @@ export class DaemonClient {
   }
 
   private scheduleNextLivenessHeartbeat(): void {
-    if (
-      this.config.livenessHeartbeat === false ||
-      this.connectionState.status !== "connected" ||
-      this.livenessHeartbeatTimer
-    ) {
+    if (this.connectionState.status !== "connected" || this.livenessHeartbeatTimer) {
       return;
     }
     this.livenessHeartbeatTimer = setTimeout(() => {
