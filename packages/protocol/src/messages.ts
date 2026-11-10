@@ -340,7 +340,6 @@ import type {
   ToolCallDetail,
   ToolCallTimelineItem,
   AgentUsage,
-  JsonValue,
 } from "./agent-types.js";
 import {
   TerminalCellSchema,
@@ -348,7 +347,6 @@ import {
   TerminalCursorSchema,
   TerminalStateSchema,
 } from "./terminal-state.js";
-
 
 export const AgentStatusSchema = z.enum(AGENT_LIFECYCLE_STATUSES);
 
