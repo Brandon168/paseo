@@ -923,6 +923,21 @@ function resolvePrimaryActionKind(input: {
   return input.offersVoiceMode ? "voiceMode" : "none";
 }
 
+/**
+ * Where an empty submit owns the trailing disc because it creates something (New workspace),
+ * voice mode sits beside it until there is text.
+ */
+function placesVoiceModeBesideSend(input: {
+  offersVoiceMode: boolean;
+  allowEmptySubmit: boolean;
+  hasSendableContent: boolean;
+  isBusy: boolean;
+  isFullscreen: boolean;
+}): boolean {
+  if (!input.offersVoiceMode || !input.allowEmptySubmit) return false;
+  return !input.hasSendableContent && !input.isBusy && !input.isFullscreen;
+}
+
 function PrimaryAction({
   kind,
   activeActionContent,
@@ -1895,12 +1910,13 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       ],
     );
 
+    const hasSendableContent = hasSendableComposerContent({
+      hasText: hasLiveText,
+      attachments,
+      hasExternalContent,
+    });
     const primaryActionKind = resolvePrimaryActionKind({
-      hasSendableContent: hasSendableComposerContent({
-        hasText: hasLiveText,
-        attachments,
-        hasExternalContent,
-      }),
+      hasSendableContent,
       allowEmptySubmit,
       isAgentRunning,
       isSubmitLoading,
@@ -2042,6 +2058,13 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     // With nothing to send and no voice mode, a disabled Send holds the trailing disc so the row
     // does not shift when typing starts.
     const sendStandsIn = isFullscreen || primaryActionKind === "none";
+    const voiceModeBesideSend = placesVoiceModeBesideSend({
+      offersVoiceMode: voiceModeContent != null,
+      allowEmptySubmit,
+      hasSendableContent,
+      isBusy: isAgentRunning || isSubmitLoading,
+      isFullscreen,
+    });
     const presentedActionKind: PrimaryActionKind = sendStandsIn ? "send" : primaryActionKind;
     const isPresentedSendDisabled = resolvePresentationSendDisabled({
       standsIn: sendStandsIn,
@@ -2251,6 +2274,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               voiceMuteToggleKeys={voiceMuteToggleKeys}
               dictationToggleKeys={dictationToggleKeys}
             />
+            {voiceModeBesideSend ? voiceModeContent : null}
             <View style={styles.trailingDisc}>{sendButton}</View>
           </View>
         </View>
@@ -2276,6 +2300,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         isRealtimeVoiceForCurrentAgent,
         voiceMuteToggleKeys,
         dictationToggleKeys,
+        voiceModeBesideSend,
+        voiceModeContent,
         sendButton,
       ],
     );
