@@ -428,15 +428,16 @@ export function WorkspaceDraftAgentTab({
     pendingMessageSubmissions,
     draftAgent,
     handleCreateFromInput,
+    createWithoutPrompt,
     continueCreateFromAttempt,
   } = useDraftAgentCreateFlow<Agent, AgentSnapshotPayload>({
     draftId,
     getPendingServerId: () => serverId,
     initialAttempt: initialCreateAttempt,
     allowEmptyText: allowsEmptyAutoSubmit,
-    validateBeforeSubmit: ({ text, attachments }) => {
+    validateBeforeSubmit: ({ text, attachments, allowEmptyText }) => {
       const allowsEmptyDraftText = shouldAllowEmptyDraftText({
-        allowsEmptyAutoSubmit,
+        allowsEmptyAutoSubmit: allowEmptyText,
         attachments,
       });
       return validateDraftSubmission({
@@ -591,6 +592,11 @@ export function WorkspaceDraftAgentTab({
   const handleDropdownCloseFocus = useCallback(() => {
     focusInputRef.current?.();
   }, []);
+  // Voice mode belongs to an agent, so starting it here creates the agent first.
+  const handleCreateAgentForVoice = useCallback(async () => {
+    const created = await createWithoutPrompt(composerState.workingDir);
+    return created.id;
+  }, [composerState.workingDir, createWithoutPrompt]);
   const importPillPress = resolveImportPillPress(onOpenImportSheet, isSubmitting);
   const composerAgentControls = useMemo(
     () => ({
@@ -647,6 +653,7 @@ export function WorkspaceDraftAgentTab({
             workspaceId={workspaceId}
             isPaneFocused={isPaneFocused}
             onSubmitMessage={handleCreateFromInput}
+            createAgentForVoice={handleCreateAgentForVoice}
             isSubmitLoading={isSubmitting}
             blurOnSubmit={true}
             textSource={draftInput.textSource}
