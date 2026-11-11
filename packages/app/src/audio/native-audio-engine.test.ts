@@ -31,6 +31,7 @@ function fakeTwoWayAudio() {
     releaseAudioSession() {},
     playPCMData() {},
     resumePlayback() {},
+    pausePlayback() {},
     stopPlayback() {},
     async getMicrophonePermissionsAsync() {
       return { granted: true };
