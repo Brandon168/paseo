@@ -404,15 +404,15 @@ export function WorkspaceDraftComposer({
     [isCompactFormFactor, openInSidePane, serverId, workspaceId],
   );
 
-  const { formErrorMessage, isSubmitting, handleCreateFromInput, continueCreateFromAttempt } =
+  const { formErrorMessage, isSubmitting, handleCreateFromInput, ...createFlow } =
     useDraftAgentCreateFlow<Agent, AgentSnapshotPayload>({
       draftId,
       getPendingServerId: () => serverId,
       initialAttempt: initialCreateAttempt,
       allowEmptyText: allowsEmptyAutoSubmit,
-      validateBeforeSubmit: ({ text, attachments }) => {
+      validateBeforeSubmit: ({ text, attachments, allowEmptyText }) => {
         const allowsEmptyDraftText = shouldAllowEmptyDraftText({
-          allowsEmptyAutoSubmit,
+          allowsEmptyAutoSubmit: allowEmptyText,
           attachments,
         });
         return validateDraftSubmission({
@@ -469,6 +469,7 @@ export function WorkspaceDraftComposer({
         onCreated(result);
       },
     });
+  const { continueCreateFromAttempt, createWithoutPrompt } = createFlow;
   useAgentControlCommandCenterActions({
     sourceId: `draft:${serverId}:${tabId}`,
     enabled: isPaneFocused && !isSubmitting,
@@ -562,6 +563,11 @@ export function WorkspaceDraftComposer({
   const handleDropdownCloseFocus = useCallback(() => {
     focusInputRef.current?.();
   }, []);
+  // Voice mode belongs to an agent, so starting it here creates the agent first.
+  const handleCreateAgentForVoice = useCallback(async () => {
+    const created = await createWithoutPrompt(composerState.workingDir);
+    return created.id;
+  }, [composerState.workingDir, createWithoutPrompt]);
   const importPillPress = resolveImportPillPress(onOpenImportSheet, isSubmitting);
   const composerAgentControls = useMemo(
     () => ({
@@ -593,6 +599,7 @@ export function WorkspaceDraftComposer({
         workspaceId={workspaceId}
         isPaneFocused={isPaneFocused}
         onSubmitMessage={handleCreateFromInput}
+        createAgentForVoice={handleCreateAgentForVoice}
         isSubmitLoading={isSubmitting}
         blurOnSubmit={true}
         textSource={draftInput.textSource}

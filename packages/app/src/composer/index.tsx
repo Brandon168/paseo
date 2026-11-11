@@ -512,21 +512,56 @@ interface AttemptStartRealtimeVoiceArgs {
   hasAgent: boolean;
   serverId: string;
   agentId: string;
+  createAgentForVoice: (() => Promise<string>) | undefined;
   toastErrorRef: { current: (message: string) => void };
 }
 
 function attemptStartRealtimeVoice(args: AttemptStartRealtimeVoiceArgs): void {
-  const { voice, isConnected, hasAgent, serverId, agentId, toastErrorRef } = args;
-  if (!voice || !isConnected || !hasAgent) return;
+  const { voice, isConnected, hasAgent, serverId, agentId, createAgentForVoice, toastErrorRef } =
+    args;
+  if (!voice || !isConnected) return;
   if (voice.isVoiceSwitching) return;
+  if (!hasAgent) {
+    if (createAgentForVoice)
+      void startVoiceForNewAgent({ voice, serverId, createAgentForVoice, toastErrorRef });
+    return;
+  }
   if (voice.isVoiceModeForAgent(serverId, agentId)) return;
   void voice.startVoice(serverId, agentId).catch((error) => {
-    console.error("[Composer] Failed to start voice mode", error);
-    const message = resolveErrorMessage(error);
-    if (message && message.trim().length > 0) {
-      toastErrorRef.current(message);
-    }
+    toastVoiceStartError(error, toastErrorRef);
   });
+}
+
+async function startVoiceForNewAgent(args: {
+  voice: NonNullable<ReturnType<typeof useVoiceOptional>>;
+  serverId: string;
+  createAgentForVoice: () => Promise<string>;
+  toastErrorRef: { current: (message: string) => void };
+}): Promise<void> {
+  let agentId: string;
+  try {
+    agentId = await args.createAgentForVoice();
+  } catch (error) {
+    // The draft keeps its form error for a failed create, as it does for a typed first message.
+    console.error("[Composer] Failed to create the agent for voice mode", error);
+    return;
+  }
+  try {
+    await args.voice.startVoice(args.serverId, agentId);
+  } catch (error) {
+    toastVoiceStartError(error, args.toastErrorRef);
+  }
+}
+
+function toastVoiceStartError(
+  error: unknown,
+  toastErrorRef: { current: (message: string) => void },
+): void {
+  console.error("[Composer] Failed to start voice mode", error);
+  const message = resolveErrorMessage(error);
+  if (message && message.trim().length > 0) {
+    toastErrorRef.current(message);
+  }
 }
 
 function focusMessageInputWithPlatformStrategy(messageInputRef: {
@@ -971,6 +1006,11 @@ interface ComposerProps {
   onFocusInput?: (focus: () => void) => void;
   /** Draft context for listing commands before an agent exists. Omitted for running agents. */
   commandDraft?: DraftCommandTarget;
+  /**
+   * Creates the chat's agent with no first message and resolves to its id, so voice mode can
+   * start before the first turn. Only a draft chat in an existing workspace passes it.
+   */
+  createAgentForVoice?: () => Promise<string>;
   /** Called when a message is about to be sent (any path: keyboard, dictation, queued). */
   onMessageSent?: () => void;
   onComposerHeightChange?: (height: number) => void;
@@ -1152,11 +1192,13 @@ interface ComposerVoiceModeButtonProps {
 /** Whether voice mode can take the trailing disc; MessageInput decides when it does. */
 function offersVoiceMode(input: {
   isVoiceModeForAgent: boolean;
-  hasAgent: boolean;
+  hasVoiceTarget: boolean;
   isAgentRunning: boolean;
   showVoice: boolean;
 }): boolean {
-  return input.showVoice && !input.isVoiceModeForAgent && input.hasAgent && !input.isAgentRunning;
+  return (
+    input.showVoice && !input.isVoiceModeForAgent && input.hasVoiceTarget && !input.isAgentRunning
+  );
 }
 
 function ComposerVoiceModeButton({
@@ -1268,6 +1310,7 @@ function ComposerContentImpl({
   autoFocusKey,
   onFocusInput,
   commandDraft,
+  createAgentForVoice,
   onMessageSent,
   onComposerHeightChange,
   onAttentionInputFocus,
@@ -1957,6 +2000,9 @@ function ComposerContentImpl({
 
   const isVoiceModeForAgent = resolveIsVoiceModeForAgent(voice, serverId, agentId);
 
+  const voiceAgentCreator = hasAgent ? undefined : createAgentForVoice;
+  const hasVoiceTarget = hasAgent || voiceAgentCreator !== undefined;
+
   const handleToggleRealtimeVoice = useCallback(() => {
     attemptStartRealtimeVoice({
       voice,
@@ -1964,9 +2010,10 @@ function ComposerContentImpl({
       hasAgent,
       serverId,
       agentId,
+      createAgentForVoice: voiceAgentCreator,
       toastErrorRef,
     });
-  }, [agentId, hasAgent, isConnected, serverId, voice]);
+  }, [agentId, hasAgent, isConnected, serverId, voice, voiceAgentCreator]);
 
   const handleEditQueuedMessage = useCallback(
     (id: string) => {
@@ -2085,7 +2132,7 @@ function ComposerContentImpl({
     () =>
       offersVoiceMode({
         isVoiceModeForAgent,
-        hasAgent,
+        hasVoiceTarget,
         isAgentRunning,
         showVoice: mode.showVoice,
       }) ? (
@@ -2104,7 +2151,7 @@ function ComposerContentImpl({
     [
       toolbarGlyph,
       handleToggleRealtimeVoice,
-      hasAgent,
+      hasVoiceTarget,
       isAgentRunning,
       isConnected,
       isVoiceModeForAgent,
@@ -2535,7 +2582,10 @@ function ComposerContentImpl({
                   voiceModeContent={voiceModeContent}
                   activeActionContent={activeActionContent}
                   voiceServerId={serverId}
-                  voiceAgentId={agentId}
+                  voiceAgentId={hasAgent ? agentId : undefined}
+                  onStartVoiceWithoutAgent={
+                    voiceAgentCreator ? handleToggleRealtimeVoice : undefined
+                  }
                   isAgentRunning={isAgentRunning}
                   defaultSendBehavior={activeSendBehavior}
                   sendShortcut={appSettings.sendShortcut}
