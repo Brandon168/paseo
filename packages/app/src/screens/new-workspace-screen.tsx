@@ -421,8 +421,13 @@ function buildComposerInitialValues(input: {
   return undefined;
 }
 
-const pendingWorkspaceSubmissions = new Map<string, Promise<SubmitOutcome>>();
-function runCreateChatAgent(input: CreateChatAgentInput): Promise<SubmitOutcome> {
+interface ChatAgentCreation {
+  outcome: SubmitOutcome;
+  agent: AgentSnapshotPayload;
+}
+
+const pendingWorkspaceSubmissions = new Map<string, Promise<ChatAgentCreation>>();
+function runCreateChatAgent(input: CreateChatAgentInput): Promise<ChatAgentCreation> {
   const key = JSON.stringify([input.serverId, input.draftId]);
   const pending = pendingWorkspaceSubmissions.get(key);
   if (pending) return pending;
@@ -432,7 +437,7 @@ function runCreateChatAgent(input: CreateChatAgentInput): Promise<SubmitOutcome>
   return submission;
 }
 
-async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<SubmitOutcome> {
+async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<ChatAgentCreation> {
   const { payload, composerState, ensureWorkspace, serverId, clearDraft } = input;
   const clearConsumedDraft = captureWorkspaceDraftCleanup(input);
   const { text, attachments, cwd } = payload;
@@ -521,9 +526,9 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
     retry: (request: CreateAgentRequestOptions) =>
       execute(retriedAgentRequest(initialAgent, request, cwd)),
   };
-  await agentCreation.result;
+  const agent = await agentCreation.result;
   if (outcome === "background") clearConsumedDraft();
-  return outcome;
+  return { outcome, agent };
 }
 
 function buildComposerConfig(input: {
@@ -1296,6 +1301,75 @@ export function NewWorkspaceScreen({
     ],
   );
 
+  const createChatAgent = useCallback(
+    (payload: MessagePayload) =>
+      runCreateChatAgent({
+        payload,
+        composerState,
+        forkDraftSetup,
+        ensureWorkspace,
+        serverId: selectedServerId,
+        clearDraft: chatDraft.clear,
+        draftKey,
+        draftId: creationIdentity.draftId,
+        draftContextScopeKey,
+        supportsForgeSearch,
+        resolveClient: withConnectedClient,
+        isStillOnCreateScreen,
+        labels: {
+          composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
+          selectModel: t("newWorkspace.errors.selectModel"),
+        },
+      }),
+    [
+      composerState,
+      forkDraftSetup,
+      ensureWorkspace,
+      selectedServerId,
+      chatDraft.clear,
+      draftKey,
+      creationIdentity,
+      draftContextScopeKey,
+      supportsForgeSearch,
+      withConnectedClient,
+      isStillOnCreateScreen,
+      t,
+    ],
+  );
+
+  // Voice mode belongs to an agent: create the workspace with its first agent and no message,
+  // the same request a typed first message makes, then hand the agent to voice mode.
+  const handleCreateAgentForVoice = useCallback(async () => {
+    try {
+      setErrorMessage(null);
+      await composerState?.persistFormPreferences();
+      await updateFormPreferences({ launchTarget });
+      setPendingAction("chat");
+      const { outcome, agent } = await createChatAgent({
+        text: "",
+        attachments: [],
+        cwd: selectedSourceDirectory ?? "",
+      });
+      if (outcome === "background") {
+        setPendingAction(null);
+      }
+      return agent.id;
+    } catch (error) {
+      const message = toErrorMessage(error);
+      setPendingAction(null);
+      setErrorMessage(message);
+      toast.error(message);
+      throw error;
+    }
+  }, [
+    composerState,
+    createChatAgent,
+    launchTarget,
+    selectedSourceDirectory,
+    toast,
+    updateFormPreferences,
+  ]);
+
   const handleSubmitNewWorkspace = useCallback(
     async (payload: MessagePayload) => {
       try {
@@ -1327,24 +1401,7 @@ export function NewWorkspaceScreen({
         }
 
         setPendingAction("chat");
-        const outcome = await runCreateChatAgent({
-          payload,
-          composerState,
-          forkDraftSetup,
-          ensureWorkspace,
-          serverId: selectedServerId,
-          clearDraft: chatDraft.clear,
-          draftKey,
-          draftId: creationIdentity.draftId,
-          draftContextScopeKey,
-          supportsForgeSearch,
-          resolveClient: withConnectedClient,
-          isStillOnCreateScreen,
-          labels: {
-            composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
-            selectModel: t("newWorkspace.errors.selectModel"),
-          },
-        });
+        const { outcome } = await createChatAgent(payload);
         if (outcome === "background") {
           setPendingAction(null);
         }
@@ -1357,21 +1414,14 @@ export function NewWorkspaceScreen({
     },
     [
       composerState,
-      draftContextScopeKey,
-      creationIdentity,
-      chatDraft.clear,
-      draftKey,
+      createChatAgent,
       ensureWorkspace,
-      forkDraftSetup,
       isStillOnCreateScreen,
       launchTarget,
       leaveFullscreen,
       selectedServerId,
-      supportsForgeSearch,
-      t,
       toast,
       updateFormPreferences,
-      withConnectedClient,
     ],
   );
 
@@ -1572,6 +1622,7 @@ export function NewWorkspaceScreen({
       serverId={selectedServerId}
       isPaneFocused={isScreenFocused}
       onSubmitMessage={handleSubmitNewWorkspace}
+      createAgentForVoice={handleCreateAgentForVoice}
       allowEmptySubmit={true}
       submitButtonAccessibilityLabel={t("newWorkspace.create")}
       submitButtonTestID="workspace-create-submit"
