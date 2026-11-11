@@ -165,6 +165,92 @@ describe("TTSManager", () => {
     await task;
   });
 
+  it("sends up to three segments ahead of playback and waits for every confirmation", async () => {
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech(text: string): Promise<{ stream: Readable; format: string }> {
+        return { stream: Readable.from([Buffer.from(text)]), format: "pcm;rate=24000" };
+      },
+    };
+    const manager = new TTSManager("s1", pino({ level: "silent" }), tts);
+    const abort = new AbortController();
+    const sentences = Array.from(
+      { length: 5 },
+      (_, i) =>
+        `Sentence ${i + 1} carries enough detail about the release to stand alone as its own spoken group, well past any packing target that would merge it with its neighbour sentence.`,
+    );
+    const sent: string[] = [];
+    let finished = false;
+
+    const task = manager
+      .generateAndWaitForPlayback(
+        sentences.join(" "),
+        (msg) => {
+          if (msg.type === "audio_output") sent.push(msg.payload.id);
+        },
+        abort.signal,
+        true,
+      )
+      .then(() => {
+        finished = true;
+        return finished;
+      });
+
+    await vi.waitFor(() => {
+      expect(sent).toHaveLength(3);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toHaveLength(3);
+
+    manager.confirmAudioPlayed(sent[0]);
+    await vi.waitFor(() => {
+      expect(sent).toHaveLength(4);
+    });
+    manager.confirmAudioPlayed(sent[1]);
+    await vi.waitFor(() => {
+      expect(sent).toHaveLength(5);
+    });
+
+    for (const id of sent.slice(2, 4)) manager.confirmAudioPlayed(id);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(finished).toBe(false);
+
+    manager.confirmAudioPlayed(sent[4]);
+    await task;
+    expect(finished).toBe(true);
+  });
+
+  it("an abort settles every segment sent ahead", async () => {
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech(text: string): Promise<{ stream: Readable; format: string }> {
+        return { stream: Readable.from([Buffer.from(text)]), format: "pcm;rate=24000" };
+      },
+    };
+    const manager = new TTSManager("s1", pino({ level: "silent" }), tts);
+    const abort = new AbortController();
+    const sentences = Array.from(
+      { length: 4 },
+      (_, i) =>
+        `Sentence ${i + 1} carries enough detail about the release to stand alone as its own spoken group, well past any packing target that would merge it with its neighbour sentence.`,
+    );
+    const sent: string[] = [];
+
+    const task = manager.generateAndWaitForPlayback(
+      sentences.join(" "),
+      (msg) => {
+        if (msg.type === "audio_output") sent.push(msg.payload.id);
+      },
+      abort.signal,
+      true,
+    );
+    await vi.waitFor(() => {
+      expect(sent).toHaveLength(3);
+    });
+
+    abort.abort();
+    await task;
+    expect(sent).toHaveLength(3);
+  });
+
   it("destroys prefetched streams after abort", async () => {
     const destroyed: string[] = [];
     const tts: TextToSpeechProvider = {
