@@ -29,6 +29,9 @@ type PreparedSegmentResult =
 
 const MAX_TTS_SEGMENT_CHARS = 260;
 const TTS_PREFETCH_SEGMENTS = 2;
+// Sent segments the client has not confirmed yet. The client plays them in order, so sending
+// ahead keeps speech going while a confirmation is slow to arrive (a stalled mobile link).
+const TTS_SEGMENTS_AHEAD_OF_PLAYBACK = 3;
 const CLOSED_AUDIO_ID_TTL_MS = 10_000;
 
 function splitOversizedFragment(fragment: string, maxChars: number): string[] {
@@ -189,6 +192,21 @@ export class TTSManager {
 
     scheduleNextSegments();
 
+    const unconfirmed: { index: number; emitStart: number; played: Promise<void> }[] = [];
+    const waitForOldestPlayback = async () => {
+      const oldest = unconfirmed.shift()!;
+      await oldest.played;
+      const now = Date.now();
+      this.logger.info(
+        {
+          segmentIndex: oldest.index,
+          emitAndPlayMs: now - oldest.emitStart,
+          totalElapsedMs: now - ttsStartMs,
+        },
+        `TTS segment ${oldest.index} playback confirmed (emit+play ${now - oldest.emitStart}ms, total ${now - ttsStartMs}ms)`,
+      );
+    };
+
     try {
       for (const segment of segments) {
         if (abortSignal.aborted) {
@@ -221,22 +239,21 @@ export class TTSManager {
         );
 
         const emitStart = Date.now();
-        await this.emitPreparedSegment({
+        const { played } = await this.emitPreparedSegment({
           prepared: result.prepared,
           emitMessage,
           abortSignal,
           isVoiceMode,
         });
-        this.logger.info(
-          {
-            segmentIndex: segment.index,
-            emitAndPlayMs: Date.now() - emitStart,
-            totalElapsedMs: Date.now() - ttsStartMs,
-          },
-          `TTS segment ${segment.index} playback confirmed (emit+play ${Date.now() - emitStart}ms, total ${Date.now() - ttsStartMs}ms)`,
-        );
+        unconfirmed.push({ index: segment.index, emitStart, played });
+        while (unconfirmed.length >= TTS_SEGMENTS_AHEAD_OF_PLAYBACK) {
+          await waitForOldestPlayback();
+        }
 
         scheduleNextSegments();
+      }
+      while (unconfirmed.length > 0) {
+        await waitForOldestPlayback();
       }
     } finally {
       this.cleanupPrefetchedSegments(inflight);
@@ -342,12 +359,16 @@ export class TTSManager {
     this.recentlyClosedAudioIds.set(audioId, now + CLOSED_AUDIO_ID_TTL_MS);
   }
 
+  /**
+   * Sends one segment and resolves once it is sent, with `played`, which settles when the client
+   * confirms playback. Sending does not wait for earlier segments to finish playing.
+   */
   private async emitPreparedSegment(params: {
     prepared: PreparedTtsSegment;
     emitMessage: (msg: SessionOutboundMessage) => void;
     abortSignal: AbortSignal;
     isVoiceMode: boolean;
-  }): Promise<void> {
+  }): Promise<{ played: Promise<void> }> {
     const { prepared, emitMessage, abortSignal, isVoiceMode } = params;
     const { stream, format, text } = prepared;
 
@@ -369,9 +390,7 @@ export class TTSManager {
 
     this.pendingPlaybacks.set(audioId, pendingPlayback);
 
-    let onAbort: (() => void) | undefined;
-
-    onAbort = () => {
+    const onAbort = () => {
       this.logger.debug("Aborted while waiting for playback");
       pendingPlayback.streamEnded = true;
       pendingPlayback.pendingChunks = 0;
@@ -382,6 +401,10 @@ export class TTSManager {
     };
 
     abortSignal.addEventListener("abort", onAbort, { once: true });
+    const release = () => {
+      abortSignal.removeEventListener("abort", onAbort);
+      this.destroySpeechStream(stream);
+    };
 
     try {
       const buffers: Buffer[] = [];
@@ -419,28 +442,53 @@ export class TTSManager {
         this.rememberClosedAudioId(audioId);
         playbackResolve();
       }
-
-      await playbackPromise;
     } catch (error) {
-      if (abortSignal.aborted) {
-        this.logger.debug("Audio stream closed after abort");
-      } else {
-        this.logger.error({ err: error }, "Error streaming audio");
-        this.pendingPlaybacks.delete(audioId);
-        throw error;
-      }
-    } finally {
-      if (onAbort) {
-        abortSignal.removeEventListener("abort", onAbort);
-      }
-      this.destroySpeechStream(stream);
+      release();
+      await this.settleFailedAudio({ error, audioId, abortSignal });
+      return { played: Promise.resolve() };
     }
 
-    if (abortSignal.aborted) {
+    const played = this.waitForPlayback({ audioId, text, playbackPromise, abortSignal }).finally(
+      release,
+    );
+    // Callers await segments in order; a later one can fail before they reach it.
+    played.catch(() => undefined);
+    return { played };
+  }
+
+  private async waitForPlayback(input: {
+    audioId: string;
+    text: string;
+    playbackPromise: Promise<void>;
+    abortSignal: AbortSignal;
+  }): Promise<void> {
+    try {
+      await input.playbackPromise;
+    } catch (error) {
+      await this.settleFailedAudio({ error, ...input });
       return;
     }
+    if (input.abortSignal.aborted) {
+      return;
+    }
+    this.logger.debug(
+      { audioId: input.audioId, textLength: input.text.length },
+      "Audio playback confirmed",
+    );
+  }
 
-    this.logger.debug({ audioId, textLength: text.length }, "Audio playback confirmed");
+  private async settleFailedAudio(input: {
+    error: unknown;
+    audioId: string;
+    abortSignal: AbortSignal;
+  }): Promise<void> {
+    if (input.abortSignal.aborted) {
+      this.logger.debug("Audio stream closed after abort");
+      return;
+    }
+    this.logger.error({ err: input.error }, "Error streaming audio");
+    this.pendingPlaybacks.delete(input.audioId);
+    throw input.error;
   }
 
   /**
