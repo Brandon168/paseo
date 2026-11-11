@@ -7,7 +7,7 @@ import type {
 
 import { createNativeEngineLease, type NativeEngineLease } from "./native-engine-lease";
 import { createPlaybackQueue } from "./playback";
-import { playPcm16 } from "./pcm";
+import { createPcmPauseGate, playPcm16 } from "./pcm";
 
 interface NativeSubscription {
   remove(): void;
@@ -182,12 +182,13 @@ export function createNativeAudioEngine(
     if (signal.aborted) throw new Error("Playback stopped");
     if (audio.type.startsWith("audio/pcm")) {
       await ensureInitialized();
-      return playPcm16(bytes, audio.type, signal, native);
+      return playPcm16(bytes, audio.type, signal, native, pauseGate);
     }
     return deps.playEncodedAudio(bytes, audio.type, signal, {
       isCaptureActive: () => refs.captureActive,
     });
   }
+  const pauseGate = createPcmPauseGate();
   const playback = createPlaybackQueue(playAudio, releaseSessionIfIdle);
 
   return {
@@ -265,8 +266,21 @@ export function createNativeAudioEngine(
     },
 
     play: playback.play,
-    stop: playback.stop,
+    stop() {
+      pauseGate.set(false);
+      playback.stop();
+    },
     clearQueue: playback.clearQueue,
+    pause() {
+      if (pauseGate.paused) return;
+      pauseGate.set(true);
+      if (refs.initialized) native.pausePlayback();
+    },
+    resume() {
+      if (!pauseGate.paused) return;
+      if (refs.initialized) native.resumePlayback();
+      pauseGate.set(false);
+    },
     isPlaying: playback.isPlaying,
   };
 }
