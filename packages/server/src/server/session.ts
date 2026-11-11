@@ -4462,6 +4462,9 @@ export class Session {
     const prompt = buildAgentPrompt(promptText, images, attachments);
 
     try {
+      // Typed messages title an untitled agent in their receipt's prepare step,
+      // which spoken input never goes through.
+      if (options?.spokenInput) await this.prepareAgentMessage(agentId, text);
       await sendPromptToAgent({
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
