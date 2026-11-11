@@ -8882,6 +8882,44 @@ export class Session {
     if (stored && !stored.title && !stored.lastUserMessageAt) {
       const { provisionalTitle } = resolveCreateAgentTitles({ initialPrompt: text });
       if (provisionalTitle) await this.agentManager.setTitle(agentId, provisionalTitle);
+      if (stored.workspaceId) {
+        await this.nameWorkspaceFromFirstMessage(stored.workspaceId, agentId, text);
+      }
+    }
+  }
+
+  /**
+   * A workspace created together with an agent that had no prompt takes its name from that
+   * agent's first message, the way it would have from the prompt at creation. Workspaces that
+   * already had another agent keep their name.
+   */
+  private async nameWorkspaceFromFirstMessage(
+    workspaceId: string,
+    agentId: string,
+    text: string,
+  ): Promise<void> {
+    const workspace = await this.workspaceRegistry.get(workspaceId);
+    if (!workspace || workspace.archivedAt || workspace.title) return;
+    const agents = await this.agentStorage.listByWorkspace(workspaceId);
+    if (agents.some((agent) => agent.id !== agentId)) return;
+    const firstAgentContext: FirstAgentContext = { prompt: text.trim() };
+    const promptTitle = resolveFirstAgentPromptTitle(firstAgentContext);
+    if (!promptTitle) return;
+    const named = await this.workspaceRegistry.update(workspaceId, (current) =>
+      current.title
+        ? current
+        : { ...current, title: promptTitle, updatedAt: new Date().toISOString() },
+    );
+    if (!named || named.title !== promptTitle) return;
+    await this.emitWorkspaceUpdateForWorkspaceId(workspaceId);
+    const context = { currentSelection: this.getFocusedAgentSelectionForCwd(named.cwd) };
+    if (named.kind === "worktree") {
+      this.workspaceAutoName.scheduleForWorktree({ workspace: named, firstAgentContext }, context);
+    } else {
+      this.workspaceAutoName.scheduleForDirectory(
+        { workspaceId, cwd: named.cwd, firstAgentContext },
+        context,
+      );
     }
   }
 
