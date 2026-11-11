@@ -1389,6 +1389,256 @@ test("create_agent_request does not title an existing workspace from the agent p
   expect(errors).toEqual([]);
 });
 
+interface SpokenNamingSessionInput {
+  workdir: string;
+  cwd: string;
+  logger: pino.Logger;
+  agentManager: AgentManager;
+  agentStorage: AgentStorage;
+  projectRegistry: FileBackedProjectRegistry;
+  workspaceRegistry: FileBackedWorkspaceRegistry;
+  generateWorkspaceName: () => Promise<GeneratedWorkspaceName | null>;
+}
+
+function createSpokenNamingSession(input: SpokenNamingSessionInput): TestSession {
+  const { workdir, cwd, logger, agentManager, agentStorage, projectRegistry, workspaceRegistry } =
+    input;
+  return asTestSession(
+    new Session({
+      workspaceRuntimeStore: createWorkspaceRuntimeStore(),
+      messageReceipts: createMessageReceiptsStub(),
+      agentMessages: createAgentMessageDeliveryStub(),
+      creationService: createTestCreationService(),
+      clientId: "test-client",
+      permissions: OWNER_PERMISSIONS,
+      appVersion: null,
+      onMessage: vi.fn(),
+      logger: asSessionLogger(logger),
+      downloadTokenStore: asDownloadTokenStore(),
+      pushNotifications: asPushNotifications(),
+      paseoHome: path.join(workdir, "paseo-home"),
+      agentManager,
+      agentStorage,
+      projectRegistry,
+      workspaceRegistry,
+      scheduleService: asScheduleService(),
+      checkoutDiffManager: asCheckoutDiffManager({
+        subscribe: async () => ({
+          initial: { cwd, files: [], error: null },
+          unsubscribe: () => {},
+        }),
+        scheduleRefreshForCwd: () => {},
+        onWorkspaceStateMayHaveChanged: () => {},
+        invalidateForge: () => {},
+        getMetrics: () => ({
+          checkoutDiffTargetCount: 0,
+          checkoutDiffSubscriptionCount: 0,
+          checkoutDiffWatcherCount: 0,
+          checkoutDiffFallbackRefreshTargetCount: 0,
+        }),
+        dispose: () => {},
+      }),
+      workspaceGitService: createNoopWorkspaceGitService(),
+      daemonConfigStore: asDaemonConfigStore({
+        get: () => ({ mcp: { injectIntoAgents: false }, providers: {} }),
+        onChange: () => () => {},
+      }),
+      mcpBaseUrl: null,
+      stt: null,
+      tts: null,
+      workspaceAutoName: new WorkspaceAutoName({
+        agentManager,
+        workspaceRegistry,
+        workspaceGitService: createNoopWorkspaceGitService(),
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+        readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
+        gitMutation: { notifyGitMutation: async () => {} },
+        emitWorkspaceUpdateForCwd: async () => {},
+        emitWorkspaceUpdateForWorkspaceId: async () => {},
+        logger: asSessionLogger(logger),
+        generateWorkspaceName: input.generateWorkspaceName,
+      }),
+      providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      terminalManager: null,
+    }),
+  );
+}
+
+async function setUpUntitledWorkspace(workdir: string, logger: pino.Logger) {
+  const cwd = path.join(workdir, "repo");
+  mkdirSync(cwd, { recursive: true });
+  const projectRegistry = new FileBackedProjectRegistry(
+    path.join(workdir, "projects.json"),
+    asSessionLogger(logger),
+  );
+  const workspaceRegistry = new FileBackedWorkspaceRegistry(
+    path.join(workdir, "workspaces.json"),
+    asSessionLogger(logger),
+  );
+  await projectRegistry.upsert(
+    createPersistedProjectRecord({
+      projectId: "proj-voice",
+      rootPath: cwd,
+      kind: "non_git",
+      displayName: "repo",
+      createdAt: "2026-05-07T00:00:00.000Z",
+      updatedAt: "2026-05-07T00:00:00.000Z",
+    }),
+  );
+  await workspaceRegistry.upsert(
+    createPersistedWorkspaceRecord({
+      workspaceId: "ws-voice",
+      projectId: "proj-voice",
+      cwd,
+      kind: "directory",
+      displayName: "repo",
+      title: null,
+      createdAt: "2026-05-07T00:00:00.000Z",
+      updatedAt: "2026-05-07T00:00:00.000Z",
+    }),
+  );
+  return { cwd, projectRegistry, workspaceRegistry };
+}
+
+interface SpokenInputAccess {
+  handleSendAgentMessage(
+    agentId: string,
+    text: string,
+    messageId?: string,
+    images?: undefined,
+    attachments?: undefined,
+    runOptions?: undefined,
+    options?: { spokenInput?: boolean },
+  ): Promise<{ ok: true } | { ok: false; error: string }>;
+}
+
+async function createPromptlessAgent(session: TestSession, cwd: string, requestId: string) {
+  await session.handleMessage({
+    type: "create_agent_request",
+    requestId,
+    workspaceId: "ws-voice",
+    config: { provider: "codex", cwd },
+    attachments: [],
+  });
+}
+
+test("a promptless first agent names its new workspace from its first spoken message", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(path.join(tmpdir(), "paseo-spoken-workspace-name-"));
+  const logger = createTestLogger();
+  const agentStorage = new AgentStorage(path.join(workdir, "agents"), asSessionLogger(logger));
+  const agentManager = new AgentManager({
+    clients: { codex: new CreateAgentTestClient() },
+    registry: agentStorage,
+    logger: asSessionLogger(logger),
+    idFactory: () => "00000000-0000-4000-8000-000000000561",
+  });
+  try {
+    const { cwd, projectRegistry, workspaceRegistry } = await setUpUntitledWorkspace(
+      workdir,
+      logger,
+    );
+    const session = createSpokenNamingSession({
+      workdir,
+      cwd,
+      logger,
+      agentManager,
+      agentStorage,
+      projectRegistry,
+      workspaceRegistry,
+      generateWorkspaceName: async () => ({ title: "Voice release notes", branch: null }),
+    });
+    await createPromptlessAgent(session, cwd, "req-promptless");
+    const [agent] = agentManager.listAgents();
+    expect(agent?.workspaceId).toBe("ws-voice");
+
+    const result = await asSessionInternals<SpokenInputAccess>(session).handleSendAgentMessage(
+      agent!.id,
+      "Plan the release notes for the voice changes",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { spokenInput: true },
+    );
+    await vi.runAllTimersAsync();
+
+    expect(result).toEqual({ ok: true });
+    await agentManager.flush();
+    await expect(agentStorage.get(agent!.id)).resolves.toMatchObject({
+      title: "Plan the release notes for the voice changes",
+    });
+    // The auto-name write lands after its timer, on the registry's own file I/O.
+    await vi.waitFor(async () => {
+      await expect(workspaceRegistry.get("ws-voice")).resolves.toMatchObject({
+        title: "Voice release notes",
+      });
+    });
+  } finally {
+    await agentManager.flush();
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+  await agentManager.flush();
+});
+
+test("a workspace that already had an agent keeps its name on a later agent's first message", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(path.join(tmpdir(), "paseo-spoken-workspace-keep-"));
+  const logger = createTestLogger();
+  const agentStorage = new AgentStorage(path.join(workdir, "agents"), asSessionLogger(logger));
+  let nextId = 562;
+  const agentManager = new AgentManager({
+    clients: { codex: new CreateAgentTestClient() },
+    registry: agentStorage,
+    logger: asSessionLogger(logger),
+    idFactory: () => `00000000-0000-4000-8000-000000000${nextId++}`,
+  });
+  try {
+    const { cwd, projectRegistry, workspaceRegistry } = await setUpUntitledWorkspace(
+      workdir,
+      logger,
+    );
+    let generateCalls = 0;
+    const session = createSpokenNamingSession({
+      workdir,
+      cwd,
+      logger,
+      agentManager,
+      agentStorage,
+      projectRegistry,
+      workspaceRegistry,
+      generateWorkspaceName: async () => {
+        generateCalls += 1;
+        return { title: "Must not be written", branch: null };
+      },
+    });
+    await createPromptlessAgent(session, cwd, "req-earlier");
+    await createPromptlessAgent(session, cwd, "req-later");
+    const later = agentManager.getAgent("00000000-0000-4000-8000-000000000563");
+    expect(later?.workspaceId).toBe("ws-voice");
+
+    await asSessionInternals<SpokenInputAccess>(session).handleSendAgentMessage(
+      later!.id,
+      "Plan the release notes",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { spokenInput: true },
+    );
+    await vi.runAllTimersAsync();
+
+    expect(generateCalls).toBe(0);
+    await expect(workspaceRegistry.get("ws-voice")).resolves.toMatchObject({ title: null });
+  } finally {
+    await agentManager.flush();
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+  await agentManager.flush();
+});
+
 test("create_agent_request does not publish the pre-prompt snapshot after the prompt starts", async () => {
   vi.useFakeTimers();
   const workdir = mkdtempSync(path.join(tmpdir(), "paseo-create-agent-live-state-"));
