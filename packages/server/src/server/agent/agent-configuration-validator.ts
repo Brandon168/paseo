@@ -23,9 +23,17 @@ export function validateAgentConfigurationAgainstProvider({
 }: AgentConfigurationValidationContext): HubExecutionAgentValidationIssue[] {
   const issues: HubExecutionAgentValidationIssue[] = [];
   const models = filterSelectableAgentModels(provider.models);
+  // A model the user hid from the picker still runs when asked for by name (agent profiles,
+  // schedules, the CLI).
+  const requestableModels = [
+    ...models,
+    ...(provider.models ?? []).filter((model) => model.hidden === true),
+  ];
   const requestedModel = input.model;
   const selectedModel = requestedModel
-    ? models.find((model) => model.id === requestedModel || model.aliases?.includes(requestedModel))
+    ? requestableModels.find(
+        (model) => model.id === requestedModel || model.aliases?.includes(requestedModel),
+      )
     : (models.find((model) => model.isDefault) ?? models[0]);
 
   if (requestedModel && !selectedModel) {

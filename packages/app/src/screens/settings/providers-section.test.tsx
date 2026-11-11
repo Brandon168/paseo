@@ -118,6 +118,7 @@ vi.mock("react-i18next", () => ({
           "settings.providers.statuses.notInstalled": "Not installed",
           "settings.providers.models.one": "1 model",
           "settings.providers.models.many": "{{count}} models",
+          "settings.providers.models.hiddenCount": "{{count}} hidden",
           "settings.providers.addErrorTitle": "Unable to add provider",
           "settings.providers.updateErrorTitle": "Unable to update provider",
           "settings.providers.actions.menu": "{{name}} actions",
@@ -437,6 +438,31 @@ describe("ProvidersSection", () => {
     expect(status).toBeGreaterThan(label);
     expect(modelCount).toBeGreaterThan(status);
     expect(switchEl).toBeGreaterThan(modelCount);
+  });
+
+  it("counts only visible models and shows how many are hidden", () => {
+    snapshotState.entries = [
+      {
+        ...claudeEntry,
+        models: [
+          ...(claudeEntry.models ?? []),
+          {
+            provider: "claude",
+            id: "claude-old",
+            label: "Claude Old",
+            hidden: true,
+            isSelectable: false,
+          },
+        ],
+      },
+    ];
+    configState.config = makeConfig({ claude: { hiddenModels: ["claude-old"] } });
+
+    render();
+
+    const nodes = descendants(findRow("Claude provider details"));
+    expect(indexOfText(nodes, "3 models")).toBeGreaterThanOrEqual(0);
+    expect(indexOfText(nodes, "1 hidden")).toBeGreaterThan(indexOfText(nodes, "3 models"));
   });
 
   it("opens the diagnostic sheet when the outer row is pressed for a disabled provider", () => {

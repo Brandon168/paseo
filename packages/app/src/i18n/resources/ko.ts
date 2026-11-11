@@ -3072,6 +3072,10 @@ export const ko: TranslationResources = {
         discovered: "발견됨",
         custom: "사용자 지정 모델",
         updated: "{{time}} 업데이트됨",
+        showModel: "모델 선택기에 {{name}} 표시",
+        showAll: "모두 표시",
+        hideAll: "모두 숨기기",
+        hiddenCount: "{{count}}개 숨김",
       },
       diagnostic: {
         title: "진단",

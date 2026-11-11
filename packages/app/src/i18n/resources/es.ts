@@ -3118,6 +3118,10 @@ export const es: TranslationResources = {
         discovered: "descubierto",
         custom: "Modelos personalizados",
         updated: "{{time}}actualizado",
+        showModel: "Mostrar {{name}} en el selector de modelos",
+        showAll: "Mostrar todos",
+        hideAll: "Ocultar todos",
+        hiddenCount: "{{count}} ocultos",
       },
       diagnostic: {
         title: "Diagnóstico",

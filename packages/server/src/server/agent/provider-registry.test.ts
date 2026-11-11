@@ -508,6 +508,7 @@ vi.mock("./providers/kimi-acp-agent.js", () => ({
 
 import {
   AGENT_PROVIDER_DEFINITIONS,
+  applyHiddenModels,
   buildProviderRegistry,
   createAllClients,
 } from "./provider-registry.js";
@@ -1686,6 +1687,130 @@ describe("model merging", () => {
 
     expect(models.map((model) => model.id)).toEqual(["MiniMax-M2.7", "MiniMax-M3"]);
     expect(models.find((model) => model.isDefault)?.id).toBe("MiniMax-M3");
+  });
+});
+
+describe("hidden models", () => {
+  const model = (id: string, extra: Record<string, unknown> = {}) => ({
+    provider: "claude" as const,
+    id,
+    label: id,
+    ...extra,
+  });
+
+  test("applyHiddenModels marks hidden models unselectable and keeps the rest", () => {
+    const result = applyHiddenModels([model("a"), model("b"), model("c")], ["b"]);
+    expect(result).toEqual([
+      model("a"),
+      model("b", { hidden: true, isSelectable: false, isDefault: false }),
+      model("c"),
+    ]);
+  });
+
+  test("applyHiddenModels moves a hidden default to the first visible model", () => {
+    const result = applyHiddenModels(
+      [model("old", { isDefault: true }), model("compat", { isSelectable: false }), model("new")],
+      ["old"],
+    );
+    expect(result.find((entry) => entry.isDefault)?.id).toBe("new");
+  });
+
+  test("applyHiddenModels leaves an all-hidden list without a default", () => {
+    const result = applyHiddenModels([model("a", { isDefault: true }), model("b")], ["a", "b"]);
+    expect(result.every((entry) => entry.hidden === true && entry.isDefault === false)).toBe(true);
+  });
+
+  test("applyHiddenModels ignores ids the catalog does not have and returns the same list when none are hidden", () => {
+    const models = [model("a")];
+    expect(applyHiddenModels(models, [])).toBe(models);
+    expect(applyHiddenModels(models, ["gone"])).toEqual(models);
+  });
+
+  test("registry hides configured models and keeps newly detected ones visible", async () => {
+    mockState.runtimeModels.set("claude", [
+      { provider: "claude", id: "runtime-old", label: "Old", isDefault: true },
+      { provider: "claude", id: "runtime-new", label: "New" },
+    ]);
+    const registry = buildProviderRegistry(logger, {
+      providerOverrides: {
+        claude: {
+          additionalModels: [{ id: "added", label: "Added" }],
+          hiddenModels: ["runtime-old", "added"],
+        },
+      },
+    });
+
+    const { models } = await registry.claude.fetchCatalog({
+      scope: "workspace",
+      cwd: "/tmp/registry-models",
+      force: false,
+    });
+
+    expect(
+      models.map((entry) => [entry.id, entry.hidden === true, entry.isSelectable !== false]),
+    ).toEqual([
+      ["runtime-old", true, false],
+      ["runtime-new", false, true],
+      ["added", true, false],
+    ]);
+    expect(models.find((entry) => entry.isDefault)?.id).toBe("runtime-new");
+  });
+
+  test("hidden models apply to replacement models and to createClient().fetchCatalog()", async () => {
+    const registry = buildProviderRegistry(logger, {
+      providerOverrides: {
+        claude: {
+          models: [
+            { id: "keep", label: "Keep" },
+            { id: "drop", label: "Drop", isDefault: true },
+          ],
+          hiddenModels: ["drop"],
+        },
+      },
+    });
+
+    const fromRegistry = await registry.claude.fetchCatalog({
+      scope: "workspace",
+      cwd: "/tmp/registry-models",
+      force: false,
+    });
+    const fromClient = await registry.claude.createClient(logger).fetchCatalog({
+      scope: "workspace",
+      cwd: "/tmp/registry-models",
+      force: false,
+    });
+
+    for (const catalog of [fromRegistry, fromClient]) {
+      expect(catalog.models.find((entry) => entry.id === "drop")).toEqual(
+        expect.objectContaining({ hidden: true, isSelectable: false, isDefault: false }),
+      );
+      expect(catalog.models.find((entry) => entry.isDefault)?.id).toBe("keep");
+    }
+  });
+
+  test("custom providers honor hiddenModels", async () => {
+    mockState.runtimeModels.set("claude", [
+      { provider: "claude", id: "runtime-a", label: "A" },
+      { provider: "claude", id: "runtime-b", label: "B" },
+    ]);
+    const registry = buildProviderRegistry(logger, {
+      providerOverrides: {
+        "claude-proxy": {
+          extends: "claude",
+          label: "Claude Proxy",
+          hiddenModels: ["runtime-a"],
+        },
+      },
+    });
+
+    const { models } = await registry["claude-proxy"].fetchCatalog({
+      scope: "workspace",
+      cwd: "/tmp/registry-models",
+      force: false,
+    });
+
+    expect(models.find((entry) => entry.id === "runtime-a")?.hidden).toBe(true);
+    expect(models.find((entry) => entry.id === "runtime-b")?.hidden).toBeUndefined();
   });
 });
 

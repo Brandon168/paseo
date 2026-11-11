@@ -3184,6 +3184,10 @@ export const en = {
         discovered: "Discovered",
         custom: "Custom models",
         updated: "Updated {{time}}",
+        showModel: "Show {{name}} in the model picker",
+        showAll: "Show all",
+        hideAll: "Hide all",
+        hiddenCount: "{{count}} hidden",
       },
       diagnostic: {
         title: "Diagnostic",

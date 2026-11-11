@@ -216,6 +216,7 @@ const MutableDaemonProviderConfigSchema = z
     paseoTools: ProviderPaseoToolsPolicySchema.optional(),
     enabled: z.boolean().optional(),
     additionalModels: z.array(MutableDaemonProviderModelSchema).optional(),
+    hiddenModels: z.array(z.string().min(1)).optional(),
   })
   .passthrough();
 
@@ -444,6 +445,7 @@ const AgentModelDefinitionSchema = z.object({
   id: z.string(),
   aliases: z.array(z.string()).optional(),
   isSelectable: z.boolean().optional(),
+  hidden: z.boolean().optional(),
   label: z.string(),
   description: z.string().optional(),
   isDefault: z.boolean().optional(),

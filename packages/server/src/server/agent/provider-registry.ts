@@ -138,6 +138,7 @@ interface ResolvedProvider {
   runtimeSettings?: ProviderRuntimeSettings;
   profileModels: ProviderProfileModel[];
   additionalModels: ProviderProfileModel[];
+  hiddenModels: string[];
   profileModelsAreAdditive: boolean;
   enabled: boolean;
   derivedFromProviderId: string | null;
@@ -433,6 +434,38 @@ function mergeModelAdditions(
   );
 }
 
+/**
+ * Keeps the user's hidden models out of the picker without dropping them from the catalog: a
+ * hidden model is marked `hidden` and not selectable (like a compatibility model), so an agent
+ * already on it still resolves. A hidden default hands the default to the first visible model.
+ */
+export function applyHiddenModels(
+  models: AgentModelDefinition[],
+  hiddenModelIds: readonly string[],
+): AgentModelDefinition[] {
+  if (hiddenModelIds.length === 0) {
+    return models;
+  }
+  const hidden = new Set(hiddenModelIds);
+  let hidDefault = false;
+  const result = models.map((model) => {
+    if (!hidden.has(model.id)) {
+      return model;
+    }
+    hidDefault ||= model.isDefault === true;
+    return Object.assign({}, model, { hidden: true, isSelectable: false, isDefault: false });
+  });
+  if (!hidDefault || result.some((model) => model.isDefault === true)) {
+    return result;
+  }
+  const firstVisible = result.findIndex((model) => model.isSelectable !== false);
+  if (firstVisible === -1) {
+    return result;
+  }
+  result[firstVisible] = Object.assign({}, result[firstVisible], { isDefault: true });
+  return result;
+}
+
 // Every session member must cross this boundary, including optional capabilities.
 type ForwardedAgentSession = { [K in keyof Required<AgentSession>]: AgentSession[K] };
 
@@ -493,6 +526,7 @@ function wrapClientProvider(
   additionalModels: ProviderProfileModel[],
   profileModelsAreAdditive: boolean,
   configuredOptions: ProviderOptions | undefined,
+  hiddenModelIds: readonly string[] = [],
 ): AgentClient {
   const listImportableSessions = inner.listImportableSessions?.bind(inner);
   const importSession = inner.importSession?.bind(inner);
@@ -550,9 +584,12 @@ function wrapClientProvider(
       );
       return {
         ...catalog,
-        models: mergeModels(provider, profileModels, additionalModels, catalog.models, {
-          profileModelsAreAdditive,
-        }),
+        models: applyHiddenModels(
+          mergeModels(provider, profileModels, additionalModels, catalog.models, {
+            profileModelsAreAdditive,
+          }),
+          hiddenModelIds,
+        ),
         modes: catalog.modes,
       };
     },
@@ -689,7 +726,10 @@ function createRegistryEntry(
         // Replacement models skip runtime model discovery, but additionalModels
         // must still be merged on top. If modes are dynamic, probe for modes via
         // the single catalog API; otherwise use static/empty modes with no runtime.
-        const models = mergeModelAdditions(provider, replacementModels, additionalModels);
+        const models = applyHiddenModels(
+          mergeModelAdditions(provider, replacementModels, additionalModels),
+          resolved.hiddenModels,
+        );
         if (hasStaticModes) {
           const defaultModeId = await runProviderRefreshActivity(
             context,
@@ -716,9 +756,12 @@ function createRegistryEntry(
       const catalog = await catalogClient.fetchCatalog(options, context);
       return {
         ...catalog,
-        models: mergeModels(provider, profileModels, additionalModels, catalog.models, {
-          profileModelsAreAdditive: resolved.profileModelsAreAdditive,
-        }),
+        models: applyHiddenModels(
+          mergeModels(provider, profileModels, additionalModels, catalog.models, {
+            profileModelsAreAdditive: resolved.profileModelsAreAdditive,
+          }),
+          resolved.hiddenModels,
+        ),
         modes: decorateModes(catalog.modes),
       };
     },
@@ -740,6 +783,7 @@ function createResolvedProviderClient(
     additionalModels,
     resolved.profileModelsAreAdditive,
     resolved.providerOptions,
+    resolved.hiddenModels,
   );
 }
 
@@ -759,6 +803,7 @@ function resolveRegisteredProvider(input: RegisteredProvider): ResolvedProvider 
     runtimeSettings,
     profileModels: override?.models ?? [],
     additionalModels: override?.additionalModels ?? [],
+    hiddenModels: override?.hiddenModels ?? [],
     profileModelsAreAdditive: false,
     enabled: override?.enabled ?? definition.enabledByDefault ?? true,
     derivedFromProviderId: null,
@@ -844,6 +889,7 @@ function addDerivedProviders(
         runtimeSettings: toRuntimeSettings(override),
         profileModels: override.models ?? [],
         additionalModels: override.additionalModels ?? [],
+        hiddenModels: override.hiddenModels ?? [],
         profileModelsAreAdditive: false,
         enabled: override.enabled !== false,
         derivedFromProviderId: null,
@@ -899,6 +945,7 @@ function addDerivedProviders(
       runtimeSettings: mergedRuntimeSettings,
       profileModels: override.models ?? [],
       additionalModels: override.additionalModels ?? [],
+      hiddenModels: override.hiddenModels ?? [],
       profileModelsAreAdditive: false,
       enabled: override.enabled !== false,
       derivedFromProviderId: baseProviderId,

@@ -42,6 +42,20 @@ describe("resolveProviderDiscoveredModels", () => {
     expect(refreshing.models).toEqual([grokModel]);
   });
 
+  it("keeps models the user hid so they can be shown again", () => {
+    const hiddenModel: AgentModelDefinition = {
+      ...piModel,
+      id: "pi/model-old",
+      label: "Pi Model old",
+      hidden: true,
+      isSelectable: false,
+    };
+
+    const result = resolveModels({ provider: "pi", currentModels: [piModel, hiddenModel] });
+
+    expect(result.models).toEqual([piModel, hiddenModel]);
+  });
+
   it("excludes compatibility-only models from display and cache", () => {
     const compatibilityModel: AgentModelDefinition = {
       ...piModel,

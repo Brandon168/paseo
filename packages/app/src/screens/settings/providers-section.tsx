@@ -50,6 +50,7 @@ interface ProviderStatus {
   tone: StatusTone;
   label: string;
   modelCount: number | null;
+  hiddenCount?: number;
 }
 
 function getProviderStatus(
@@ -57,6 +58,7 @@ function getProviderStatus(
   enabled: boolean,
   modelCount: number,
   t: TFunction,
+  hiddenCount = 0,
 ): ProviderStatus {
   if (!enabled)
     return { tone: "muted", label: t("settings.providers.statuses.disabled"), modelCount: null };
@@ -71,6 +73,7 @@ function getProviderStatus(
       tone: "success",
       label: t("settings.providers.statuses.available"),
       modelCount: modelCount > 0 ? modelCount : null,
+      hiddenCount,
     };
   }
   return {
@@ -223,7 +226,8 @@ function ProviderRow({
       ? entry.error.trim()
       : null;
   const modelCount = filterSelectableModels(entry.models ?? null)?.length ?? 0;
-  const providerStatus = getProviderStatus(entry.status, enabled, modelCount, t);
+  const hiddenCount = entry.models?.filter((model) => model.hidden === true).length ?? 0;
+  const providerStatus = getProviderStatus(entry.status, enabled, modelCount, t, hiddenCount);
 
   const handlePress = useCallback(() => {
     onPress(def.id);
@@ -341,6 +345,14 @@ function StatusIndicator({ status, compact }: { status: ProviderStatus; compact:
                 {status.modelCount === 1
                   ? t("settings.providers.models.one")
                   : t("settings.providers.models.many", { count: status.modelCount })}
+              </Text>
+            </>
+          ) : null}
+          {status.hiddenCount ? (
+            <>
+              <Text style={styles.separator}>·</Text>
+              <Text style={styles.statusLabel}>
+                {t("settings.providers.models.hiddenCount", { count: status.hiddenCount })}
               </Text>
             </>
           ) : null}

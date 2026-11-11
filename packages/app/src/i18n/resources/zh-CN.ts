@@ -3018,6 +3018,10 @@ export const zhCN: TranslationResources = {
         discovered: "已发现",
         custom: "自定义 Models",
         updated: "已更新 {{time}}",
+        showModel: "在模型选择器中显示 {{name}}",
+        showAll: "全部显示",
+        hideAll: "全部隐藏",
+        hiddenCount: "已隐藏 {{count}} 个",
       },
       diagnostic: {
         title: "诊断",

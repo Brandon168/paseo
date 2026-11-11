@@ -12,6 +12,7 @@ import {
 } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Switch } from "@/components/ui/switch";
 import { ScrollableCodeSurface, SurfaceCard } from "@/components/ui/scrollable-code-surface";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
@@ -49,10 +50,28 @@ function rankModels<T>(items: T[], query: string, fields: (item: T) => string[])
   return scored.map((entry) => entry.item);
 }
 
-function DiscoveredModelRow({ model }: { model: AgentModelDefinition }) {
+function DiscoveredModelRow({
+  model,
+  hidden,
+  saving,
+  onToggleVisible,
+}: {
+  model: AgentModelDefinition;
+  hidden: boolean;
+  saving: boolean;
+  onToggleVisible: (modelId: string, visible: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const handleValueChange = useCallback(
+    (visible: boolean) => onToggleVisible(model.id, visible),
+    [model.id, onToggleVisible],
+  );
   return (
-    <View style={sheetStyles.modelRow}>
-      <Text style={sheetStyles.modelTitle} numberOfLines={1}>
+    <View style={sheetStyles.modelRow} testID={`provider-model-row-${model.id}`}>
+      <Text
+        style={[sheetStyles.modelTitle, hidden && sheetStyles.hiddenModelText]}
+        numberOfLines={1}
+      >
         {model.label}
       </Text>
       <Text
@@ -67,7 +86,16 @@ function DiscoveredModelRow({ model }: { model: AgentModelDefinition }) {
         <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
           {model.description}
         </Text>
-      ) : null}
+      ) : (
+        <View style={sheetStyles.modelRowFiller} />
+      )}
+      <Switch
+        value={!hidden}
+        onValueChange={handleValueChange}
+        disabled={saving}
+        accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
+        testID={`provider-model-visible-${model.id}`}
+      />
     </View>
   );
 }
@@ -403,8 +431,12 @@ interface ProviderModalBodyProps {
   filteredDiscovered: AgentModelDefinition[];
   filteredCustom: ProviderProfileModel[];
   deletingModelId: string | null;
+  hiddenModelIds: ReadonlySet<string>;
+  savingVisibility: boolean;
   onRefresh: () => void;
   onDeleteCustom: (modelId: string) => void;
+  onToggleModelVisible: (modelId: string, visible: boolean) => void;
+  onSetListedVisible: (visible: boolean) => void;
   theme: { iconSize: { md: number }; colors: { foregroundMuted: string } };
 }
 
@@ -494,10 +526,19 @@ function ProviderModalBody(props: ProviderModalBodyProps) {
     filteredDiscovered,
     filteredCustom,
     deletingModelId,
+    hiddenModelIds,
+    savingVisibility,
     onRefresh,
     onDeleteCustom,
+    onToggleModelVisible,
+    onSetListedVisible,
     theme,
   } = props;
+  const listedHiddenCount = filteredDiscovered.filter((model) =>
+    hiddenModelIds.has(model.id),
+  ).length;
+  const handleShowListed = useCallback(() => onSetListedVisible(true), [onSetListedVisible]);
+  const handleHideListed = useCallback(() => onSetListedVisible(false), [onSetListedVisible]);
 
   if (discoveredCount === 0 && additionalCount === 0 && providerSnapshotRefreshing) {
     return (
@@ -541,10 +582,41 @@ function ProviderModalBody(props: ProviderModalBodyProps) {
           <SectionHeader
             title={t("settings.providers.models.discovered")}
             count={filteredDiscovered.length}
+            hint={
+              listedHiddenCount > 0
+                ? t("settings.providers.models.hiddenCount", { count: listedHiddenCount })
+                : undefined
+            }
           />
+          <View style={sheetStyles.visibilityActions}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={handleShowListed}
+              disabled={savingVisibility || listedHiddenCount === 0}
+              testID="provider-models-show-all"
+            >
+              {t("settings.providers.models.showAll")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={handleHideListed}
+              disabled={savingVisibility || listedHiddenCount === filteredDiscovered.length}
+              testID="provider-models-hide-all"
+            >
+              {t("settings.providers.models.hideAll")}
+            </Button>
+          </View>
           <View style={settingsStyles.card}>
             {filteredDiscovered.map((model) => (
-              <DiscoveredModelRow key={model.id} model={model} />
+              <DiscoveredModelRow
+                key={model.id}
+                model={model}
+                hidden={hiddenModelIds.has(model.id)}
+                saving={savingVisibility}
+                onToggleVisible={onToggleModelVisible}
+              />
             ))}
           </View>
         </View>
@@ -582,6 +654,7 @@ export function ProviderDiagnosticSheet({
   const isCompact = useIsCompactFormFactor();
   const { entries: snapshotEntries, refresh, isRefreshing } = useProvidersSnapshot(serverId);
   const { config, patchConfig } = useDaemonConfig(serverId);
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [diagSheetOpen, setDiagSheetOpen] = useState(false);
@@ -596,6 +669,14 @@ export function ProviderDiagnosticSheet({
     () => config?.providers?.[provider]?.additionalModels ?? [],
     [config?.providers, provider],
   );
+  const configuredHiddenModels = useMemo(
+    () => config?.providers?.[provider]?.hiddenModels ?? [],
+    [config?.providers, provider],
+  );
+  // Shown immediately while the config write and catalog refresh catch up.
+  const [pendingHiddenModels, setPendingHiddenModels] = useState<string[] | null>(null);
+  const hiddenModelList = pendingHiddenModels ?? configuredHiddenModels;
+  const hiddenModelIds = useMemo(() => new Set(hiddenModelList), [hiddenModelList]);
   const providerSnapshotRefreshing = providerEntry?.status === "loading";
   const providerErrorMessage =
     providerEntry?.status === "error"
@@ -640,6 +721,42 @@ export function ProviderDiagnosticSheet({
   const handleCloseAddSheet = useCallback(() => setAddSheetOpen(false), []);
   const handleOpenDiagSheet = useCallback(() => setDiagSheetOpen(true), []);
   const handleCloseDiagSheet = useCallback(() => setDiagSheetOpen(false), []);
+
+  const saveHiddenModels = useCallback(
+    (next: string[]) => {
+      setPendingHiddenModels(next);
+      void patchConfig({ providers: { [provider]: { hiddenModels: next } } })
+        .then(() => refresh([provider]))
+        .catch((err: unknown) => {
+          toast.error(
+            err instanceof Error ? err.message : t("settings.providers.models.failedToSave"),
+          );
+        })
+        .finally(() => setPendingHiddenModels(null));
+    },
+    [patchConfig, provider, refresh, t, toast],
+  );
+
+  const handleToggleModelVisible = useCallback(
+    (modelId: string, show: boolean) => {
+      saveHiddenModels(
+        show
+          ? hiddenModelList.filter((id) => id !== modelId)
+          : [...hiddenModelList.filter((id) => id !== modelId), modelId],
+      );
+    },
+    [hiddenModelList, saveHiddenModels],
+  );
+
+  // Show all / Hide all act on the models listed, so a search narrows them first.
+  const handleSetListedVisible = useCallback(
+    (show: boolean) => {
+      const listed = new Set(filteredDiscovered.map((model) => model.id));
+      const kept = hiddenModelList.filter((id) => !listed.has(id));
+      saveHiddenModels(show ? kept : [...kept, ...listed]);
+    },
+    [filteredDiscovered, hiddenModelList, saveHiddenModels],
+  );
 
   const handleDeleteCustom = useCallback(
     (modelId: string) => {
@@ -699,8 +816,12 @@ export function ProviderDiagnosticSheet({
           filteredDiscovered={filteredDiscovered}
           filteredCustom={filteredCustom}
           deletingModelId={deletingModelId}
+          hiddenModelIds={hiddenModelIds}
+          savingVisibility={pendingHiddenModels !== null}
           onRefresh={handleRefreshModels}
           onDeleteCustom={handleDeleteCustom}
+          onToggleModelVisible={handleToggleModelVisible}
+          onSetListedVisible={handleSetListedVisible}
           theme={theme}
         />
       </AdaptiveModalSheet>
@@ -806,6 +927,15 @@ const sheetStyles = StyleSheet.create((theme) => ({
   },
   modelRowFiller: {
     flex: 1,
+  },
+  hiddenModelText: {
+    color: theme.colors.foregroundMuted,
+  },
+  visibilityActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: theme.spacing[1],
+    marginBottom: theme.spacing[2],
   },
   emptyState: {
     paddingVertical: theme.spacing[8],

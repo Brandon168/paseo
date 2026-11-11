@@ -3089,6 +3089,10 @@ export const ar: TranslationResources = {
         discovered: "اكتشف",
         custom: "نماذج مخصصة",
         updated: "تم تحديث{{time}}",
+        showModel: "إظهار {{name}} في منتقي النماذج",
+        showAll: "إظهار الكل",
+        hideAll: "إخفاء الكل",
+        hiddenCount: "{{count}} مخفية",
       },
       diagnostic: {
         title: "التشخيص",

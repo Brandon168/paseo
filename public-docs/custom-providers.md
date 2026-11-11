@@ -211,6 +211,22 @@ Any agent that speaks [ACP](https://agentclientprotocol.com) over stdio can be a
 }
 ```
 
+## Hiding models
+
+`hiddenModels` keeps model IDs out of the model picker while discovery keeps running: models detected later appear until you hide them. A hidden model stays in the catalog, so an agent already on it, or a profile, schedule or CLI call that names it, still works. If the default model is hidden, the first visible model becomes the default. In the app, open **Settings → your host → Providers**, select a provider and use the switch on each model, or **Show all** / **Hide all**.
+
+```json
+{
+  "agents": {
+    "providers": {
+      "opencode": {
+        "hiddenModels": ["openai/gpt-4o-mini", "google/gemini-2.5-flash"]
+      }
+    }
+  }
+}
+```
+
 ## Full reference
 
 For the complete field reference (`extends`, `label`, `command`, `env`, `options`, `models`, `additionalModels`, `disallowedTools`, `paseoTools`, `enabled`, `order`), model and thinking-option schemas, and deeper examples for each plan, see [docs/custom-providers.md](https://github.com/getpaseo/paseo/blob/main/docs/custom-providers.md) on GitHub. See [Limit Paseo tools by provider](/docs/mcp#limit-paseo-tools-by-provider) for `paseoTools` configuration.

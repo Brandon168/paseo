@@ -59,6 +59,9 @@ export const ProviderOverrideSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
   models: z.array(ProviderProfileModelSchema).optional(),
   additionalModels: z.array(ProviderProfileModelSchema).optional(),
+  // Model ids kept out of the model picker. Detected models stay in the catalog (agents already on
+  // one keep working); models detected later are visible until they are added here.
+  hiddenModels: z.array(z.string().min(1)).optional(),
   disallowedTools: z.array(z.string()).optional(),
   paseoTools: ProviderPaseoToolsPolicySchema.optional(),
   enabled: z.boolean().optional(),

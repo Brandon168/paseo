@@ -92,6 +92,8 @@ export interface AgentModelDefinition {
   id: string;
   aliases?: string[];
   isSelectable?: boolean;
+  /** Hidden by the user (provider `hiddenModels`); also not selectable. */
+  hidden?: boolean;
   label: string;
   description?: string;
   isDefault?: boolean;

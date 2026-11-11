@@ -3099,6 +3099,10 @@ export const ptBR: TranslationResources = {
         discovered: "Descobertos",
         custom: "Modelos personalizados",
         updated: "Atualizado {{time}}",
+        showModel: "Mostrar {{name}} no seletor de modelos",
+        showAll: "Mostrar todos",
+        hideAll: "Ocultar todos",
+        hiddenCount: "{{count}} ocultos",
       },
       diagnostic: {
         title: "Diagnóstico",

@@ -3086,6 +3086,10 @@ export const ja: TranslationResources = {
         discovered: "検出済み",
         custom: "カスタムモデル",
         updated: "{{time}}に更新",
+        showModel: "{{name}} をモデル選択に表示",
+        showAll: "すべて表示",
+        hideAll: "すべて非表示",
+        hiddenCount: "{{count}} 件非表示",
       },
       diagnostic: {
         title: "診断",

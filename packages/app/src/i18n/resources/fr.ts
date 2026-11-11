@@ -3126,6 +3126,10 @@ export const fr: TranslationResources = {
         discovered: "Détectés",
         custom: "Modèles personnalisés",
         updated: "Mis à jour {{time}}",
+        showModel: "Afficher {{name}} dans le sélecteur de modèles",
+        showAll: "Tout afficher",
+        hideAll: "Tout masquer",
+        hiddenCount: "{{count}} masqués",
       },
       diagnostic: {
         title: "Diagnostic",

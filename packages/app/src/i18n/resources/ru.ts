@@ -3110,6 +3110,10 @@ export const ru: TranslationResources = {
         discovered: "Обнаруженные модели",
         custom: "Пользовательские модели",
         updated: "Обновлено {{time}}",
+        showModel: "Показывать {{name}} в списке моделей",
+        showAll: "Показать все",
+        hideAll: "Скрыть все",
+        hiddenCount: "Скрыто: {{count}}",
       },
       diagnostic: {
         title: "Диагностика",

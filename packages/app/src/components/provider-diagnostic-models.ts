@@ -1,5 +1,4 @@
 import type { AgentModelDefinition } from "@getpaseo/protocol/agent-types";
-import { filterSelectableModels } from "@/provider-selection/model-catalog";
 
 export interface ProviderDiscoveredModelsCache {
   serverId: string;
@@ -27,7 +26,11 @@ export function resolveProviderDiscoveredModels({
   providerSnapshotRefreshing,
   previousCache,
 }: ResolveProviderDiscoveredModelsInput): ResolveProviderDiscoveredModelsResult {
-  const selectableModels = filterSelectableModels(currentModels ?? null) ?? [];
+  // Models the user hid stay listed here so they can be shown again; other unselectable
+  // (compatibility) models stay out.
+  const selectableModels = (currentModels ?? []).filter(
+    (model) => model.isSelectable !== false || model.hidden === true,
+  );
   if (selectableModels.length > 0) {
     const cache = { serverId, provider, models: selectableModels };
     return { models: selectableModels, cache };
