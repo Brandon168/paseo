@@ -227,6 +227,7 @@ describe("useDraftAgentCreateFlow", () => {
       text: "",
       attachments: [attachment],
       cwd: "/repo",
+      allowEmptyText: false,
     });
     expect(createRequest).toHaveBeenCalledWith({
       attempt: expect.objectContaining({
@@ -238,5 +239,67 @@ describe("useDraftAgentCreateFlow", () => {
       cwd: "/repo",
     });
     expect(onCreateSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates the agent without a first message for voice mode and returns it", async () => {
+    const createRequest = vi.fn(async () => ({
+      agentId: "agent-voice",
+      result: { id: "agent-voice" },
+    }));
+    const onCreateSuccess = vi.fn();
+    const validateBeforeSubmit = vi.fn(() => null);
+    const { result } = renderHook(() =>
+      useDraftAgentCreateFlow({
+        draftId: "draft-voice",
+        getPendingServerId: () => "server-1",
+        buildDraftAgent: (currentAttempt) => ({ currentAttempt }),
+        createRequest,
+        onCreateSuccess,
+        validateBeforeSubmit,
+      }),
+    );
+
+    let created: unknown;
+    await act(async () => {
+      created = await result.current.createWithoutPrompt("/repo");
+    });
+
+    expect(created).toEqual({ id: "agent-voice" });
+    expect(validateBeforeSubmit).toHaveBeenCalledWith({
+      text: "",
+      attachments: [],
+      cwd: "/repo",
+      allowEmptyText: true,
+    });
+    expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({ text: "", cwd: "/repo" }));
+    expect(onCreateSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("still requires a first message when an empty draft is sent", async () => {
+    const captureError = (error: unknown) => error;
+    const createRequest = vi.fn(async () => ({
+      agentId: "agent-1",
+      result: { id: "agent-1" },
+    }));
+    const { result } = renderHook(() =>
+      useDraftAgentCreateFlow({
+        draftId: "draft-empty",
+        getPendingServerId: () => "server-1",
+        buildDraftAgent: (currentAttempt) => ({ currentAttempt }),
+        createRequest,
+        onCreateSuccess: () => undefined,
+      }),
+    );
+
+    let failure: unknown;
+    await act(async () => {
+      failure = await result.current
+        .handleCreateFromInput({ text: "  ", attachments: [], cwd: "/repo" })
+        .catch(captureError);
+    });
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(result.current.formErrorMessage).not.toBe("");
+    expect(createRequest).not.toHaveBeenCalled();
   });
 });

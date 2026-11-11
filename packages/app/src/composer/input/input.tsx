@@ -191,6 +191,8 @@ export interface MessageInputProps {
   activeActionContent?: React.ReactNode;
   voiceServerId?: string;
   voiceAgentId?: string;
+  /** Starts voice mode in a chat that has no agent yet; the voice shortcut calls it. */
+  onStartVoiceWithoutAgent?: () => void;
   /** When true and there's sendable content, calls onQueue instead of onSubmit */
   isAgentRunning?: boolean;
   /** Controls what the default send action (Enter, send button, dictation) does when the agent is
@@ -950,6 +952,7 @@ interface ToggleRealtimeVoiceContext {
     | undefined;
   voiceServerId: string | undefined;
   voiceAgentId: string | undefined;
+  startVoiceWithoutAgent: (() => void) | undefined;
   isConnected: boolean;
   disabled: boolean;
   isAgentRunning: boolean;
@@ -960,7 +963,13 @@ interface ToggleRealtimeVoiceContext {
 }
 
 function toggleRealtimeVoiceImpl(ctx: ToggleRealtimeVoiceContext): void {
-  if (!ctx.voice || !ctx.voiceServerId || !ctx.voiceAgentId || !ctx.isConnected || ctx.disabled) {
+  if (!ctx.voice || !ctx.voiceServerId || !ctx.isConnected || ctx.disabled) {
+    return;
+  }
+  if (!ctx.voiceAgentId) {
+    if (!ctx.startVoiceWithoutAgent) return;
+    ctx.exitFullscreen();
+    ctx.startVoiceWithoutAgent();
     return;
   }
   if (ctx.voice.isVoiceSwitching) return;
@@ -1191,6 +1200,7 @@ interface ResolvedMessageInputProps {
   activeActionContent: React.ReactNode;
   voiceServerId: string | undefined;
   voiceAgentId: string | undefined;
+  onStartVoiceWithoutAgent: (() => void) | undefined;
   isAgentRunning: boolean;
   defaultSendBehavior: "interrupt" | "steer" | "queue";
   sendShortcut: SendShortcut;
@@ -1239,6 +1249,7 @@ function resolveMessageInputProps(props: MessageInputProps): ResolvedMessageInpu
     activeActionContent: props.activeActionContent,
     voiceServerId: props.voiceServerId,
     voiceAgentId: props.voiceAgentId,
+    onStartVoiceWithoutAgent: props.onStartVoiceWithoutAgent,
     isAgentRunning: props.isAgentRunning ?? false,
     defaultSendBehavior: props.defaultSendBehavior,
     sendShortcut: props.sendShortcut,
@@ -1321,6 +1332,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       activeActionContent,
       voiceServerId,
       voiceAgentId,
+      onStartVoiceWithoutAgent,
       isAgentRunning,
       defaultSendBehavior,
       sendShortcut,
@@ -1728,6 +1740,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         voice,
         voiceServerId,
         voiceAgentId,
+        startVoiceWithoutAgent: onStartVoiceWithoutAgent,
         isConnected,
         disabled,
         isAgentRunning,
@@ -1742,6 +1755,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       exitFullscreen,
       isAgentRunning,
       isConnected,
+      onStartVoiceWithoutAgent,
       t,
       toast,
       voice,
