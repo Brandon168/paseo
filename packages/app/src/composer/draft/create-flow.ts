@@ -99,7 +99,7 @@ interface UseDraftAgentCreateFlowOptions<TDraftAgent, TCreateResult> {
   getPendingServerId: () => string | null;
   initialAttempt?: CreateAttempt | null;
   allowEmptyText?: boolean;
-  validateBeforeSubmit?: (ctx: SubmitContext) => string | null;
+  validateBeforeSubmit?: (ctx: SubmitContext & { allowEmptyText: boolean }) => string | null;
   onBeforeSubmit?: (ctx: CreateRequestContext) => Promise<void> | void;
   onCreateStart?: () => void;
   createRequest: (ctx: CreateRequestContext) => Promise<CreateRequestResult<TCreateResult>>;
@@ -240,6 +240,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         }
 
         await onCreateSuccess({ result: createResult.result, attempt });
+        return createResult.result;
       } catch (error) {
         const resolved =
           error instanceof Error ? error : new Error(t("composer.errors.failedToCreateAgent"));
@@ -266,8 +267,11 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     ],
   );
 
-  const handleCreateFromInput = useCallback(
-    async ({ text, attachments, cwd }: SubmitContext) => {
+  const createFromInput = useCallback(
+    async (
+      { text, attachments, cwd }: SubmitContext,
+      options: { allowEmptyText: boolean },
+    ): Promise<TCreateResult> => {
       const existing = useCreateFlowStore.getState().pendingByDraftId[draftId];
       if (
         isSubmitting ||
@@ -295,7 +299,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       const images = wirePayload.images;
 
       const hasAttachmentContent = images.length > 0 || wirePayload.attachments.length > 0;
-      if (!trimmedPrompt && !hasAttachmentContent && !allowEmptyText) {
+      if (!trimmedPrompt && !hasAttachmentContent && !options.allowEmptyText) {
         const error = new Error(t("composer.errors.initialPromptRequired"));
         dispatch({ type: "DRAFT_SET_ERROR", message: error.message });
         throw error;
@@ -305,6 +309,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         text: trimmedPrompt,
         attachments,
         cwd,
+        allowEmptyText: options.allowEmptyText,
       });
       if (validationError) {
         const error = new Error(validationError);
@@ -335,10 +340,9 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       });
 
       onCreateStart?.();
-      await runCreateAttempt({ attempt, cwd });
+      return await runCreateAttempt({ attempt, cwd });
     },
     [
-      allowEmptyText,
       draftId,
       getPendingServerId,
       isSubmitting,
@@ -349,6 +353,20 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       t,
       validateBeforeSubmit,
     ],
+  );
+
+  const handleCreateFromInput = useCallback(
+    async (ctx: SubmitContext): Promise<void> => {
+      await createFromInput(ctx, { allowEmptyText });
+    },
+    [allowEmptyText, createFromInput],
+  );
+
+  /** Creates the agent with no first message, for voice mode to start on it. */
+  const createWithoutPrompt = useCallback(
+    (cwd: string): Promise<TCreateResult> =>
+      createFromInput({ text: "", attachments: [], cwd }, { allowEmptyText: true }),
+    [createFromInput],
   );
 
   const continueCreateFromAttempt = useCallback(
@@ -369,6 +387,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     pendingMessageSubmissions,
     draftAgent,
     handleCreateFromInput,
+    createWithoutPrompt,
     continueCreateFromAttempt,
   };
 }
