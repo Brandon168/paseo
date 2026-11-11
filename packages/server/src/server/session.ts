@@ -1339,6 +1339,7 @@ export class Session {
           },
           interruptAgentIfRunning: (agentId) => this.interruptAgentIfRunning(agentId),
           hasActiveAgentRun: (agentId) => this.hasActiveAgentRun(agentId),
+          supportsPlaybackHold: () => this.clientCapabilities.has(CLIENT_CAPS.voicePlaybackHold),
         },
         logger: this.sessionLogger,
         sessionId: this.sessionId,
