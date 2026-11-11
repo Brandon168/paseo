@@ -140,6 +140,67 @@ test("interruptAgentIfRunning rejects when graceful cancellation is refused", as
   );
 });
 
+function createSpokenInputSession(stored: {
+  title: string | null;
+  lastUserMessageAt: string | null;
+}) {
+  const agentId = "22222222-2222-4222-8222-222222222222";
+  const setTitle = vi.fn(async () => undefined);
+  const session = createSessionForTest({
+    agentManager: {
+      getAgent: vi.fn(() => ({ id: agentId, provider: "claude", lifecycle: "idle" })),
+      setTitle,
+      waitForAgentClose: vi.fn(async () => undefined),
+      // Settles the send without starting a provider turn.
+      tryRunOutOfBand: vi.fn(async () => true),
+    },
+    agentStorage: {
+      get: vi.fn().mockResolvedValue({ id: agentId, archivedAt: null, ...stored }),
+    },
+  });
+  return { agentId, setTitle, session };
+}
+
+test("the first spoken message titles an untitled agent like a typed one", async () => {
+  const { agentId, setTitle, session } = createSpokenInputSession({
+    title: null,
+    lastUserMessageAt: null,
+  });
+
+  const result = await asSessionInternals(session).handleSendAgentMessage(
+    agentId,
+    "Plan the release notes for the voice changes",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { spokenInput: true },
+  );
+
+  expect(result).toEqual({ ok: true });
+  expect(setTitle).toHaveBeenCalledWith(agentId, "Plan the release notes for the voice changes");
+});
+
+test("a later spoken message keeps the agent's title", async () => {
+  const { agentId, setTitle, session } = createSpokenInputSession({
+    title: null,
+    lastUserMessageAt: "2026-11-11T08:40:06.000Z",
+  });
+
+  const result = await asSessionInternals(session).handleSendAgentMessage(
+    agentId,
+    "And the changelog too",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { spokenInput: true },
+  );
+
+  expect(result).toEqual({ ok: true });
+  expect(setTitle).not.toHaveBeenCalled();
+});
+
 test("cancel_agent_request reports refusal only through its response", async () => {
   const agentId = "11111111-1111-4111-8111-111111111111";
   const messages: SessionOutboundMessage[] = [];
