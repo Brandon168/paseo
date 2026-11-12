@@ -28,22 +28,303 @@ index 73466dd..8440ac9 100644
  
    auto textSize = textLayoutManager_
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-index 9e429b8..1d10014 100644
+index 1794b53..eca5e57 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-@@ -36,2 +36,2 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+@@ -33,8 +33,8 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+     return mOnPasteListener
+   }
+ 
 -  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
 -    val ic = super.onCreateInputConnection(outAttrs)
 +  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
 +    val ic = super.onCreateInputConnection(outAttrs) ?: return null
-@@ -58 +58 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+ 
+     EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
+ 
+@@ -55,6 +55,6 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+       true
+     }
+ 
 -    return InputConnectionCompat.createWrapper(ic!!, outAttrs, callback)
 +    return InputConnectionCompat.createWrapper(ic, outAttrs, callback)
+   }
+ }
+diff --git a/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm b/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm
+index 59ff531..9f26962 100644
+--- a/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm
++++ b/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm
+@@ -39,6 +39,8 @@ static BOOL pasteInputCanPerformActionIMP(id self, SEL _cmd, SEL action, id send
+ // Bumped on every register/unregister so in-flight retry blocks for an older
+ // generation can detect that they're stale and bail out.
+ @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *registrationGenerations;
++// Active registrations keyed by Fabric component view tag, accessed on the main queue.
++@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSDictionary *> *activeRegistrationsByTag;
+ @end
+ 
+ static id _reactHost = nil;
+@@ -64,6 +66,7 @@ RCT_EXPORT_MODULE()
+     if (self = [super init]) {
+         _registeredViews = [NSMutableDictionary new];
+         _registrationGenerations = [NSMutableDictionary new];
++        _activeRegistrationsByTag = [NSMutableDictionary new];
+     }
+     return self;
+ }
+@@ -102,6 +105,11 @@ RCT_EXPORT_MODULE()
+     // All access to registrationGenerations / registeredViews must happen on
+     // the main queue — TurboModule methods aren't guaranteed to run there.
+     dispatch_async(dispatch_get_main_queue(), ^{
++        self.activeRegistrationsByTag[viewRef] = @{
++            @"nativeID": nativeID,
++            @"config": configDict,
++        };
++
+         // Bump the generation so any retries from a prior register/unregister
+         // cycle for the same nativeID notice they're stale and bail out.
+         NSInteger generation = [self.registrationGenerations[nativeID] integerValue] + 1;
+@@ -140,13 +148,22 @@ RCT_EXPORT_MODULE()
+  */
+ - (void)unregisterTextInput:(NSString *)nativeID
+ {
++    NSArray *components = [nativeID componentsSeparatedByString:@"_"];
++    NSNumber *viewRef = components.count >= 2 ? @([components[1] integerValue]) : nil;
++
+     dispatch_async(dispatch_get_main_queue(), ^{
+         // Invalidate any pending retries for this nativeID.
+         [self.registrationGenerations removeObjectForKey:nativeID];
++        if (viewRef && [self.activeRegistrationsByTag[viewRef][@"nativeID"] isEqualToString:nativeID]) {
++            [self.activeRegistrationsByTag removeObjectForKey:viewRef];
++        }
+ 
+         UIView *view = self.registeredViews[nativeID];
+         if (view) {
+-            [self removeDynamicSubclassing:view];
++            NSString *ownerNativeID = objc_getAssociatedObject(view, kPasteInputNativeIDKey);
++            if (!ownerNativeID || [ownerNativeID isEqualToString:nativeID]) {
++                [self removeDynamicSubclassing:view];
++            }
+             [self.registeredViews removeObjectForKey:nativeID];
+         }
+     });
+@@ -330,7 +347,10 @@ RCT_EXPORT_MODULE()
+ 
+     // Check if already subclassed
+     if (objc_getAssociatedObject(view, kOriginalClassKey)) {
+-        // Already subclassed, just update config
++        // Fabric recycles backing UITextViews across hidden/unmounted inputs, so
++        // refresh the current owner nativeID and module alongside the config.
++        objc_setAssociatedObject(view, kPasteInputModuleKey, self, OBJC_ASSOCIATION_ASSIGN);
++        objc_setAssociatedObject(view, kPasteInputNativeIDKey, nativeID, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+         objc_setAssociatedObject(view, kPasteInputConfigKey, config, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+         [self applySmartPunctuationSettings:view config:config];
+         return;
+@@ -425,15 +445,37 @@ RCT_EXPORT_MODULE()
+ 
+ #pragma mark - Intercepted Methods (C functions for IMP)
+ 
++/**
++ * Resolve the active PasteInput registration currently owning `view` in the Fabric
++ * hierarchy. Fabric recycles backing UITextViews across component views and sets
++ * `componentView.tag = reactTag` while mounted (`0` when recycled), so walking
++ * superviews finds the current owner even before an async re-registration lands.
++ */
++static NSDictionary *pasteInputActiveRegistrationForView(UIView *view, PasteInputModule *module)
++{
++    if (!view || !module) {
++        return nil;
++    }
++    for (UIView *current = view; current != nil; current = current.superview) {
++        if (current.tag > 0) {
++            NSDictionary *registration = module.activeRegistrationsByTag[@(current.tag)];
++            if (registration != nil) {
++                return registration;
++            }
++        }
++    }
++    return nil;
++}
++
+ /**
+  * Intercepted paste: implementation
+  */
+ static void pasteInputInterceptedPasteIMP(id self, SEL _cmd, id sender)
+ {
+-    // Get the module and config
+     PasteInputModule *module = objc_getAssociatedObject(self, kPasteInputModuleKey);
+-    NSString *nativeID = objc_getAssociatedObject(self, kPasteInputNativeIDKey);
+     Class originalClass = objc_getAssociatedObject(self, kOriginalClassKey);
++    NSDictionary *registration = pasteInputActiveRegistrationForView(self, module);
++    NSString *nativeID = registration[@"nativeID"];
+ 
+     if (!module || !nativeID) {
+         if (originalClass) {
+@@ -447,17 +489,26 @@ static void pasteInputInterceptedPasteIMP(id self, SEL _cmd, id sender)
+     }
+ 
+     // Try to extract files from the pasteboard. If nothing extractable, fall
+-    // back to the system paste handler — that's our signal that the pasteboard
+-    // only contained text/rich-text representations.
++    // back to the system paste handler — unless the pasteboard holds an image
++    // with no text, in which case notify JS so its clipboard reader can attach it.
+     UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
+     NSArray<NSDictionary *> *files = [pasteboard getCopiedFiles];
+ 
+     if (files.count == 0) {
+-        struct objc_super superData = {
+-            .receiver = self,
+-            .super_class = originalClass
+-        };
+-        ((void(*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&superData, _cmd, sender);
++        if (pasteboard.hasImages && !pasteboard.hasStrings) {
++            [module sendEventWithName:@"onPaste" body:@{
++                @"nativeID": nativeID,
++                @"data": @[],
++            }];
++            return;
++        }
++        if (originalClass) {
++            struct objc_super superData = {
++                .receiver = self,
++                .super_class = originalClass
++            };
++            ((void(*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&superData, _cmd, sender);
++        }
+         return;
+     }
+ 
+@@ -497,28 +548,32 @@ static void pasteInputInterceptedPasteIMP(id self, SEL _cmd, id sender)
+  */
+ static BOOL pasteInputCanPerformActionIMP(id self, SEL _cmd, SEL action, id sender)
+ {
+-
+-    NSDictionary *config = objc_getAssociatedObject(self, kPasteInputConfigKey);
+-    BOOL disableCopyPaste = [config[@"disableCopyPaste"] boolValue];
++    PasteInputModule *module = objc_getAssociatedObject(self, kPasteInputModuleKey);
+     Class originalClass = objc_getAssociatedObject(self, kOriginalClassKey);
++    NSDictionary *registration = pasteInputActiveRegistrationForView(self, module);
+ 
+-    if (disableCopyPaste) {
+-        if (action == @selector(paste:) ||
+-            action == @selector(copy:) ||
+-            action == @selector(cut:)) {
+-            return NO;
++    if (registration) {
++        NSDictionary *config = registration[@"config"];
++        BOOL disableCopyPaste = [config[@"disableCopyPaste"] boolValue];
++
++        if (disableCopyPaste) {
++            if (action == @selector(paste:) ||
++                action == @selector(copy:) ||
++                action == @selector(cut:)) {
++                return NO;
++            }
+         }
+-    }
+ 
+-    // Special handling for paste: enable it if there's any content in pasteboard
+-    if (action == @selector(paste:)) {
+-        UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
++        // Special handling for paste: enable it if there's any content in pasteboard
++        if (action == @selector(paste:)) {
++            UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
+ 
+-        // Check if pasteboard has any items (images, files, text, etc.)
+-        BOOL hasContent = pasteboard.hasImages || pasteboard.hasURLs || pasteboard.hasStrings || pasteboard.numberOfItems > 0;
++            // Check if pasteboard has any items (images, files, text, etc.)
++            BOOL hasContent = pasteboard.hasImages || pasteboard.hasURLs || pasteboard.hasStrings || pasteboard.numberOfItems > 0;
+ 
+-        if (hasContent) {
+-            return YES;
++            if (hasContent) {
++                return YES;
++            }
+         }
+     }
+ 
+diff --git a/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m b/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m
+index 98b42c0..a03a392 100644
+--- a/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m
++++ b/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m
+@@ -29,6 +29,7 @@
+       // Skip representations that aren't raw bytes (e.g. NSString/NSURL).
+       // Image types are exceptions: their values are UIImage/NSData fetched via helpers below.
+       if (![item[type] isKindOfClass:[NSData class]] &&
++          ![item[type] isKindOfClass:[UIImage class]] &&
+           ![type isEqual:@"public.jpeg"] && ![type isEqual:@"public.png"] &&
+           ![type isEqual:@"com.compuserve.gif"] && ![type isEqual:@"public.heic"]) {
+         continue;
+@@ -36,12 +37,28 @@
+ 
+       @try {
+         NSString *uri = self.string;
+-        NSData *fileData = item[type];
++        NSData *fileData = nil;
+ 
+         if ([type isEqual:@"public.jpeg"] || [type isEqual:@"public.png"]) {
+           fileData = [self getDataForImageItem:item[type] type:type];
+-        } else if ([type isEqual:@"com.compuserve.gif"] || [type isEqual:@"public.heic"]) {
+-          fileData = [self dataForPasteboardType:type];
++        } else if ([type isEqual:@"com.compuserve.gif"]) {
++          fileData = [item[type] isKindOfClass:[NSData class]]
++            ? (NSData *)item[type]
++            : [[self dataForPasteboardType:type inItemSet:[NSIndexSet indexSetWithIndex:i]] firstObject];
++        } else if ([type isEqual:@"public.heic"]) {
++          id rawItem = item[type];
++          if (![rawItem isKindOfClass:[UIImage class]] && ![rawItem isKindOfClass:[NSData class]]) {
++            rawItem = [[self dataForPasteboardType:type inItemSet:[NSIndexSet indexSetWithIndex:i]] firstObject];
++          }
++          fileData = [self getDataForImageItem:rawItem type:@"public.jpeg"];
++        } else if ([item[type] isKindOfClass:[UIImage class]]) {
++          fileData = [self getDataForImageItem:item[type] type:@"public.png"];
++        } else if ([item[type] isKindOfClass:[NSData class]]) {
++          fileData = (NSData *)item[type];
++        }
++
++        if (fileData == nil || [fileData length] == 0) {
++          continue;
+         }
+         
+         SwimeProxy *swimeProxy = [SwimeProxy shared];
+@@ -86,11 +103,19 @@
+   return fileInfos;
+ }
+ 
+--(NSData *) getDataForImageItem:(NSData *)imageData type:(NSString *)type {
+-  UIImage *image;
+-  image = (UIImage *)imageData;
+-  size_t width = CGImageGetWidth(image.CGImage);
+-  size_t height = CGImageGetHeight(image.CGImage);
++-(nullable NSData *) getDataForImageItem:(nullable id)imageData type:(NSString *)type {
++  UIImage *image = nil;
++  if ([imageData isKindOfClass:[UIImage class]]) {
++    image = (UIImage *)imageData;
++  } else if ([imageData isKindOfClass:[NSData class]]) {
++    image = [UIImage imageWithData:(NSData *)imageData];
++  }
++  if (!image) {
++    return [imageData isKindOfClass:[NSData class]] ? (NSData *)imageData : nil;
++  }
++  CGImageRef cgImage = image.CGImage;
++  size_t width = cgImage ? CGImageGetWidth(cgImage) : (size_t)(image.size.width * image.scale);
++  size_t height = cgImage ? CGImageGetHeight(cgImage) : (size_t)(image.size.height * image.scale);
+   if (width > 6048 || height > 4032) {
+     image = [image vImageScaledImageWithSize:CGSizeMake(2048, 2048) contentMode:UIViewContentModeScaleAspectFit];
+   }
+@@ -99,7 +124,7 @@
+     return UIImagePNGRepresentation(image);
+   }
+ 
+-  return UIImageJPEGRepresentation(image, 1.0);
++  return UIImageJPEGRepresentation(image, 0.9);
+ }
+ 
+ @end
 diff --git a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
-index 51b9dfa..501badf 100644
+index 51b9dfa..2a5581f 100644
 --- a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
 +++ b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
-@@ -54,17 +54,25 @@ function PasteInputIOSComponent(props, forwardedRef) {
+@@ -54,44 +54,54 @@ function PasteInputIOSComponent(props, forwardedRef) {
  
    // Expose the TextInput ref to parent components (same as Android)
    // TextInput already has all methods from PasteTextInputInstance (clear, isFocused, setSelection)
@@ -78,9 +359,91 @@ index 51b9dfa..501badf 100644
 +    setNativeProps: nativeProps => textInputRef.current?.setNativeProps?.(nativeProps)
 +  }), []);
  
-   // Register/unregister with native module on mount/unmount
-   (0, _react.useEffect)(() => {
-@@ -125,17 +133,15 @@ function PasteInputAndroidComponent(props, forwardedRef) {
+-  // Register/unregister with native module on mount/unmount
+-  (0, _react.useEffect)(() => {
+-    // Get the native tag from the ref's internal __nativeTag property
+-    // @ts-ignore - __nativeTag is an internal property
++  const registerCurrentInput = () => {
+     const nativeTag = textInputRef.current?.__nativeTag;
+     if (!nativeTag) {
+-      if (__DEV__) {
+-        console.warn('[PasteInput] Could not get native tag from ref');
+-      }
+-      return;
++      return null;
+     }
+-
+-    // Use the actual React native tag as the identifier
+     const nativeID = `PasteInput_${nativeTag}`;
+     nativeIDRef.current = nativeID;
+-
+-    // Register this TextInput instance by passing the nativeID
+     _NativePasteInputModule.default.registerTextInput(nativeID, {
+       disableCopyPaste,
+       smartPunctuation
+     });
++    return nativeID;
++  };
++
++  // Register/unregister with native module on mount/unmount
++  (0, _react.useEffect)(() => {
++    const nativeID = registerCurrentInput();
++    if (!nativeID) {
++      if (__DEV__) {
++        console.warn('[PasteInput] Could not get native tag from ref');
++      }
++      return;
++    }
+ 
+     // Listen for paste events
+     const subscription = PasteInputEventEmitter.addListener('onPaste', event => {
+       // Only handle events for this instance
+-      if (event.nativeID === nativeID) {
++      if (event.nativeID === nativeIDRef.current) {
+         onPasteRef.current?.(event.error || null, event.data);
+       }
+     });
+@@ -99,7 +109,9 @@ function PasteInputIOSComponent(props, forwardedRef) {
+     // Cleanup on unmount
+     return () => {
+       subscription.remove();
+-      _NativePasteInputModule.default.unregisterTextInput(nativeID);
++      if (nativeIDRef.current) {
++        _NativePasteInputModule.default.unregisterTextInput(nativeIDRef.current);
++      }
+     };
+   }, []); // Empty deps - only run on mount/unmount
+ 
+@@ -112,9 +124,27 @@ function PasteInputIOSComponent(props, forwardedRef) {
+       });
+     }
+   }, [disableCopyPaste, smartPunctuation]);
++  const {
++    onFocus,
++    onLayout
++  } = textInputProps;
+   return /*#__PURE__*/(0, _jsxRuntime.jsx)(_reactNative.TextInput, {
+     ref: textInputRef,
+-    ...textInputProps
++    ...textInputProps,
++    onLayout: event => {
++      const {
++        width,
++        height
++      } = event.nativeEvent.layout;
++      if (width > 0 && height > 0) {
++        registerCurrentInput();
++      }
++      onLayout?.(event);
++    },
++    onFocus: event => {
++      registerCurrentInput();
++      onFocus?.(event);
++    }
+   });
+ }
+ function PasteInputAndroidComponent(props, forwardedRef) {
+@@ -125,17 +155,15 @@ function PasteInputAndroidComponent(props, forwardedRef) {
    const pasteTextInputRef = (0, _react.useRef)(null);
  
    // Expose the PasteTextInput ref to parent components (same as iOS)
@@ -157,10 +520,10 @@ index 5119e65..287216a 100644
      setMostRecentEventCount(event.nativeEvent.eventCount);
    };
 diff --git a/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js b/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js
-index 75fe015..1d3cd64 100644
+index 75fe015..5b0f0a8 100644
 --- a/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js
 +++ b/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js
-@@ -49,17 +49,25 @@ function PasteInputIOSComponent(props, forwardedRef) {
+@@ -49,44 +49,54 @@ function PasteInputIOSComponent(props, forwardedRef) {
  
    // Expose the TextInput ref to parent components (same as Android)
    // TextInput already has all methods from PasteTextInputInstance (clear, isFocused, setSelection)
@@ -195,9 +558,91 @@ index 75fe015..1d3cd64 100644
 +    setNativeProps: nativeProps => textInputRef.current?.setNativeProps?.(nativeProps)
 +  }), []);
  
-   // Register/unregister with native module on mount/unmount
-   useEffect(() => {
-@@ -120,17 +128,15 @@ function PasteInputAndroidComponent(props, forwardedRef) {
+-  // Register/unregister with native module on mount/unmount
+-  useEffect(() => {
+-    // Get the native tag from the ref's internal __nativeTag property
+-    // @ts-ignore - __nativeTag is an internal property
++  const registerCurrentInput = () => {
+     const nativeTag = textInputRef.current?.__nativeTag;
+     if (!nativeTag) {
+-      if (__DEV__) {
+-        console.warn('[PasteInput] Could not get native tag from ref');
+-      }
+-      return;
++      return null;
+     }
+-
+-    // Use the actual React native tag as the identifier
+     const nativeID = `PasteInput_${nativeTag}`;
+     nativeIDRef.current = nativeID;
+-
+-    // Register this TextInput instance by passing the nativeID
+     NativePasteInputModule.registerTextInput(nativeID, {
+       disableCopyPaste,
+       smartPunctuation
+     });
++    return nativeID;
++  };
++
++  // Register/unregister with native module on mount/unmount
++  useEffect(() => {
++    const nativeID = registerCurrentInput();
++    if (!nativeID) {
++      if (__DEV__) {
++        console.warn('[PasteInput] Could not get native tag from ref');
++      }
++      return;
++    }
+ 
+     // Listen for paste events
+     const subscription = PasteInputEventEmitter.addListener('onPaste', event => {
+       // Only handle events for this instance
+-      if (event.nativeID === nativeID) {
++      if (event.nativeID === nativeIDRef.current) {
+         onPasteRef.current?.(event.error || null, event.data);
+       }
+     });
+@@ -94,7 +104,9 @@ function PasteInputIOSComponent(props, forwardedRef) {
+     // Cleanup on unmount
+     return () => {
+       subscription.remove();
+-      NativePasteInputModule.unregisterTextInput(nativeID);
++      if (nativeIDRef.current) {
++        NativePasteInputModule.unregisterTextInput(nativeIDRef.current);
++      }
+     };
+   }, []); // Empty deps - only run on mount/unmount
+ 
+@@ -107,9 +119,27 @@ function PasteInputIOSComponent(props, forwardedRef) {
+       });
+     }
+   }, [disableCopyPaste, smartPunctuation]);
++  const {
++    onFocus,
++    onLayout
++  } = textInputProps;
+   return /*#__PURE__*/_jsx(TextInput, {
+     ref: textInputRef,
+-    ...textInputProps
++    ...textInputProps,
++    onLayout: event => {
++      const {
++        width,
++        height
++      } = event.nativeEvent.layout;
++      if (width > 0 && height > 0) {
++        registerCurrentInput();
++      }
++      onLayout?.(event);
++    },
++    onFocus: event => {
++      registerCurrentInput();
++      onFocus?.(event);
++    }
+   });
+ }
+ function PasteInputAndroidComponent(props, forwardedRef) {
+@@ -120,17 +150,15 @@ function PasteInputAndroidComponent(props, forwardedRef) {
    const pasteTextInputRef = useRef(null);
  
    // Expose the PasteTextInput ref to parent components (same as iOS)
@@ -274,10 +719,10 @@ index 39bd607..f2b1d2f 100644
      setMostRecentEventCount(event.nativeEvent.eventCount);
    };
 diff --git a/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx b/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx
-index 12befab..0d23ca5 100644
+index 12befab..977d937 100644
 --- a/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx
 +++ b/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx
-@@ -64,17 +64,25 @@ function PasteInputIOSComponent(
+@@ -64,40 +64,51 @@ function PasteInputIOSComponent(
  
      // Expose the TextInput ref to parent components (same as Android)
      // TextInput already has all methods from PasteTextInputInstance (clear, isFocused, setSelection)
@@ -312,9 +757,96 @@ index 12befab..0d23ca5 100644
 +        setNativeProps: (nativeProps: any) => textInputRef.current?.setNativeProps?.(nativeProps),
 +    } as unknown as PasteTextInputInstance), []);
  
-     // Register/unregister with native module on mount/unmount
-     useEffect(() => {
-@@ -143,17 +151,15 @@ function PasteInputAndroidComponent(
+-    // Register/unregister with native module on mount/unmount
+-    useEffect(() => {
+-        // Get the native tag from the ref's internal __nativeTag property
++    const registerCurrentInput = () => {
+         // @ts-ignore - __nativeTag is an internal property
+         const nativeTag = textInputRef.current?.__nativeTag;
+-
+         if (!nativeTag) {
+-            if (__DEV__) {
+-                console.warn('[PasteInput] Could not get native tag from ref');
+-            }
+-            return;
++            return null;
+         }
+-
+-        // Use the actual React native tag as the identifier
+         const nativeID = `PasteInput_${nativeTag}`;
+         nativeIDRef.current = nativeID;
+-
+-        // Register this TextInput instance by passing the nativeID
+         NativePasteInputModule.registerTextInput(nativeID, {
+             disableCopyPaste,
+             smartPunctuation,
+         });
++        return nativeID;
++    };
++
++    // Register/unregister with native module on mount/unmount
++    useEffect(() => {
++        const nativeID = registerCurrentInput();
++
++        if (!nativeID) {
++            if (__DEV__) {
++                console.warn('[PasteInput] Could not get native tag from ref');
++            }
++            return;
++        }
+ 
+         // Listen for paste events
+         const subscription = PasteInputEventEmitter!.addListener(
+@@ -108,7 +119,7 @@ function PasteInputIOSComponent(
+                 error?: string;
+             }) => {
+                 // Only handle events for this instance
+-                if (event.nativeID === nativeID) {
++                if (event.nativeID === nativeIDRef.current) {
+                     onPasteRef.current?.(event.error || null, event.data);
+                 }
+             }
+@@ -117,7 +128,9 @@ function PasteInputIOSComponent(
+         // Cleanup on unmount
+         return () => {
+             subscription.remove();
+-            NativePasteInputModule.unregisterTextInput(nativeID);
++            if (nativeIDRef.current) {
++                NativePasteInputModule.unregisterTextInput(nativeIDRef.current);
++            }
+         };
+     }, []); // Empty deps - only run on mount/unmount
+ 
+@@ -131,7 +144,27 @@ function PasteInputIOSComponent(
+         }
+     }, [disableCopyPaste, smartPunctuation]);
+ 
+-    return <TextInput ref={textInputRef} {...textInputProps} />;
++    // Fabric drops and recreates host views under `display: none` (RetainedPanel)
++    // while keeping this component mounted. Re-register on layout and focus so the
++    // newly mounted backing UITextView gets paste interception immediately.
++    const { onFocus, onLayout } = textInputProps;
++    return (
++        <TextInput
++            ref={textInputRef}
++            {...textInputProps}
++            onLayout={(event) => {
++                const { width, height } = event.nativeEvent.layout;
++                if (width > 0 && height > 0) {
++                    registerCurrentInput();
++                }
++                onLayout?.(event);
++            }}
++            onFocus={(event) => {
++                registerCurrentInput();
++                onFocus?.(event);
++            }}
++        />
++    );
+ }
+ 
+ function PasteInputAndroidComponent(
+@@ -143,17 +176,15 @@ function PasteInputAndroidComponent(
      const pasteTextInputRef = useRef<PasteTextInputInstance>(null);
  
      // Expose the PasteTextInput ref to parent components (same as iOS)

@@ -139,9 +139,9 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
       (error: string | null | undefined, files: PastedFile[]) => {
         if (error) {
           onPasteError?.(error);
-        } else if (files.length > 0) {
-          onPasteImages?.(files);
+          return;
         }
+        onPasteImages?.(files);
       },
       [onPasteError, onPasteImages],
     );
