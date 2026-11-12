@@ -162,6 +162,10 @@ class AudioEngine {
             print("Could not enable voice processing \(error)")
             return
         }
+        // Experiment: automatic gain control lifts quiet input, which in a silent room
+        // includes the reply's residual echo on a speakerphone.
+        input.isVoiceProcessingAGCEnabled = false
+        print("[voice-agc] voice processing AGC enabled: \(input.isVoiceProcessingAGCEnabled)")
         
         avAudioEngine.inputNode.isVoiceProcessingInputMuted = !isRecording
         
