@@ -25,7 +25,6 @@ export interface TwoWayAudioModule {
   startDictation(): boolean;
   releaseAudioSession(): void;
   playPCMData(data: Uint8Array): void;
-  pausePlayback(): void;
   getMicrophonePermissionsAsync(): Promise<MicrophonePermission>;
   requestMicrophonePermissionsAsync(): Promise<MicrophonePermission>;
   addExpoTwoWayAudioEventListener(
