@@ -131,7 +131,6 @@ export function playPcm16(
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let remainingMs = duration * 1000;
     let startedAt = 0;
-    let enqueued = false;
     let unsubscribe = () => {};
     const done = () => {
       unsubscribe();
@@ -144,28 +143,14 @@ export function playPcm16(
         resolve(duration);
       }, remainingMs);
     };
-    const startPlayback = () => {
-      if (!enqueued) {
-        enqueued = true;
-        output.resumePlayback();
-        output.playPCMData(pcm);
-      }
-      startTimer();
-    };
-    // Both native players start audio inside playPCMData(), so keep held bytes
-    // behind the gate and freeze completion time whenever playback pauses.
+    // The native player stops on pause; completion time has to stop with it.
     const onPauseChange = (paused: boolean) => {
       if (paused && timeout !== undefined) {
         clearTimeout(timeout);
         timeout = undefined;
         remainingMs = Math.max(0, remainingMs - (Date.now() - startedAt));
       } else if (!paused && timeout === undefined) {
-        try {
-          startPlayback();
-        } catch (error) {
-          done();
-          reject(error);
-        }
+        startTimer();
       }
     };
     const abort = () => {
@@ -176,8 +161,10 @@ export function playPcm16(
     };
     signal.addEventListener("abort", abort, { once: true });
     try {
+      if (!pause?.paused) output.resumePlayback();
+      output.playPCMData(pcm);
       if (pause) unsubscribe = pause.onChange(onPauseChange);
-      if (!pause?.paused) startPlayback();
+      if (!pause?.paused) startTimer();
     } catch (error) {
       done();
       reject(error);

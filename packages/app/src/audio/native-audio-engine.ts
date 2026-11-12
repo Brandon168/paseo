@@ -268,8 +268,8 @@ export function createNativeAudioEngine(
 
     play: playback.play,
     stop() {
-      playback.stop();
       pauseGate.set(false);
+      playback.stop();
     },
     clearQueue: playback.clearQueue,
     pause() {
