@@ -1833,7 +1833,10 @@ function ComposerContentImpl({
     (files: readonly NativePastedFile[]) => {
       setPendingNativeImagePastes((pending) => pending + 1);
       void pickAndPersistImages({
-        pickImages: async () => normalizeNativePastedImages(files),
+        pickImages: () =>
+          normalizeNativePastedImages(files, {
+            readClipboardImage: () => readClipboardImage(Clipboard),
+          }),
         persister: composerImageAttachmentPersister,
       })
         .then((newImages) => {
