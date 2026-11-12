@@ -115,8 +115,6 @@ interface RuntimePlaybackState {
   activeGroupId: string | null;
   processing: boolean;
   generation: number;
-  /** The daemon asked to pause the reply until the user's transcript decides. */
-  held: boolean;
 }
 
 interface CueState {
@@ -182,11 +180,7 @@ export interface VoiceRuntime {
   onAssistantAudioStarted(serverId: string): void;
   onAssistantAudioFinished(serverId: string): void;
   onTranscriptionResult(serverId: string, text: string): void;
-  onServerSpeechStateChanged(
-    serverId: string,
-    isSpeaking: boolean,
-    playback?: "hold" | "resume" | "stop",
-  ): void;
+  onServerSpeechStateChanged(serverId: string, isSpeaking: boolean): void;
   onTurnEvent(serverId: string, agentId: string, eventType: TurnEventType): void;
 }
 
@@ -212,7 +206,6 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
     activeGroupId: null,
     processing: false,
     generation: 0,
-    held: false,
   };
   const cue: CueState = {
     controller: null,
@@ -296,7 +289,6 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
   }
 
   function resetPlaybackState(): void {
-    playback.held = false;
     playback.generation += 1;
     playback.groups.clear();
     playback.orderedGroupIds = [];
@@ -441,8 +433,7 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
     return (
       state.snapshot.isVoiceMode &&
       state.snapshot.phase === "waiting" &&
-      !state.telemetry.isSpeaking &&
-      !playback.held
+      !state.telemetry.isSpeaking
     );
   }
 
@@ -906,26 +897,16 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
       stopCue();
     },
 
-    onServerSpeechStateChanged(serverId, isSpeaking, playbackAction) {
+    onServerSpeechStateChanged(serverId, isSpeaking) {
       if (serverId !== state.snapshot.activeServerId || !state.snapshot.isVoiceMode) {
         return;
       }
 
       state.serverSpeechDetected = isSpeaking;
       state.serverSpeechStartedAt = isSpeaking ? (state.serverSpeechStartedAt ?? Date.now()) : null;
-      if (isSpeaking && playbackAction === "hold") {
-        // Possibly noise or the reply's own echo: pause in place until the transcript decides.
-        playback.held = true;
-        stopCue();
-        deps.engine.pause();
-      } else if (playbackAction === "resume") {
-        if (playback.held) {
-          playback.held = false;
-          deps.engine.resume();
-        }
-      } else if (isSpeaking || playbackAction === "stop") {
+      if (isSpeaking) {
         const shouldInterruptPlayback =
-          state.snapshot.phase === "playing" || playback.groups.size > 0 || playback.held;
+          state.snapshot.phase === "playing" || playback.groups.size > 0;
         resetPlaybackState();
         stopCue();
         if (shouldInterruptPlayback) {

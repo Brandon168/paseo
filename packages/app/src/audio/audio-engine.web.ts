@@ -62,7 +62,6 @@ export function createAudioEngine(
     gain: GainNode | null;
     started: boolean;
     muted: boolean;
-    playbackPaused: boolean;
   } = {
     playbackContext: null,
     captureContext: null,
@@ -72,7 +71,6 @@ export function createAudioEngine(
     gain: null,
     started: false,
     muted: false,
-    playbackPaused: false,
   };
 
   async function ensurePlaybackContext(): Promise<AudioContext> {
@@ -82,8 +80,7 @@ export function createAudioEngine(
       refs.playbackContext = new AudioContextCtor();
     }
     const context = refs.playbackContext;
-    // A paused context stays suspended; sources started now play once it resumes.
-    if (context.state === "suspended" && !refs.playbackPaused) {
+    if (context.state === "suspended") {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
@@ -318,24 +315,8 @@ export function createAudioEngine(
     },
 
     play: playback.play,
-    stop() {
-      if (refs.playbackPaused) {
-        refs.playbackPaused = false;
-        void refs.playbackContext?.resume().catch(() => undefined);
-      }
-      playback.stop();
-    },
+    stop: playback.stop,
     clearQueue: playback.clearQueue,
-    pause() {
-      if (refs.playbackPaused) return;
-      refs.playbackPaused = true;
-      void refs.playbackContext?.suspend().catch(() => undefined);
-    },
-    resume() {
-      if (!refs.playbackPaused) return;
-      refs.playbackPaused = false;
-      void refs.playbackContext?.resume().catch(() => undefined);
-    },
     isPlaying: playback.isPlaying,
   };
 }

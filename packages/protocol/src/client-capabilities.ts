@@ -49,11 +49,6 @@ export const CLIENT_CAPS = {
   // COMPAT(workspaceSetupBlocked): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
   workspaceSetupBlocked: "workspace_setup_blocked",
   browserHost: "browser_host",
-  // COMPAT(voicePlaybackHold): added after v0.15.4. Capable clients pause assistant
-  // speech on a voice_input_state "hold" and wait for "resume" or "stop"; the daemon
-  // holds playback instead of aborting it only for them. Older clients stop and drop
-  // queued audio on speech start, so holding would leave their playback unconfirmed.
-  voicePlaybackHold: "voice_playback_hold",
 } as const;
 
 export type ClientCapability = (typeof CLIENT_CAPS)[keyof typeof CLIENT_CAPS];
