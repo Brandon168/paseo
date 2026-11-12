@@ -467,6 +467,10 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
       if (controller.signal.aborted) {
         return;
       }
+      if (!canPlayCue()) {
+        stopCue();
+        return;
+      }
       void deps.engine
         .play(cueSource, controller.signal)
         .catch((error) => {
@@ -518,6 +522,9 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
     uploader.reset();
     resetCaptureTelemetry();
     patchSnapshot({ ...INITIAL_SNAPSHOT });
+    // Capture keeps reporting volume while it shuts down, and each report can restart the
+    // cue while voice mode still looks active. Nothing reconciles it once voice is off.
+    stopCue();
   }
 
   function publishDisplayVolume(level: number, nowMs: number): void {

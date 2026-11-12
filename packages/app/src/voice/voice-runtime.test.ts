@@ -314,6 +314,32 @@ describe("voice runtime", () => {
     resolvePlay(0.1);
   });
 
+  it("does not start the thinking tone while voice mode is shutting down after its session is lost", async () => {
+    const adapter = createSessionAdapter();
+    const engine = createAudioEngineMock();
+    let finishStopCapture = () => {};
+    vi.mocked(engine.stopCapture).mockImplementation(
+      () => new Promise<void>((resolve) => (finishStopCapture = resolve)),
+    );
+    const { runtime } = createRuntime({ engine });
+    const unregister = runtime.registerSession(adapter);
+
+    await runtime.startVoice("server-1", "agent-1");
+    runtime.onTurnEvent("server-1", "agent-1", "turn_started");
+    expect(runtime.getSnapshot().phase).toBe("waiting");
+
+    // The session goes away while the agent is still working. The microphone keeps
+    // reporting volume until capture has stopped.
+    unregister();
+    runtime.handleCaptureVolume(0);
+    finishStopCapture();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runtime.getSnapshot().isVoiceMode).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(engine.play).not.toHaveBeenCalled();
+  });
+
   it("does not play the thinking tone in the gap between two segments of one reply", async () => {
     const adapter = createSessionAdapter();
     const engine = createAudioEngineMock();
