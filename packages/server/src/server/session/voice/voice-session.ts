@@ -50,6 +50,8 @@ interface AudioBufferState {
 }
 
 interface VoiceTranscriptionResultPayload {
+  /** Set for a turn controller utterance; absent for audio transcribed in one piece. */
+  utteranceId?: string;
   text: string;
   requestId: string;
   language?: string;
@@ -184,11 +186,12 @@ export class VoiceSession {
   private speechInProgress = false;
   private isDetectorSpeaking = false;
   /**
-   * One entry per utterance whose transcript has not arrived yet, oldest first. A deferred
-   * one was heard while a reply was at stake, so its transcript decides whether the reply
-   * stops; each keeps what was true when it was heard.
+   * One entry per utterance whose transcript has not arrived yet, by utterance id. A
+   * deferred one was heard while a reply was at stake, so its transcript decides whether
+   * the reply stops; each keeps what was true when it was heard. Transcripts are matched
+   * by id because a turn controller error leaves earlier utterances still to be delivered.
    */
-  private pendingClips: PendingClip[] = [];
+  private pendingClips = new Map<string, PendingClip>();
   /** The utterance being captured now is deferred. */
   private capturingDeferredClip = false;
   private bargeInClipTimer: ReturnType<typeof setTimeout> | null = null;
@@ -611,16 +614,16 @@ export class VoiceSession {
         ? { speechConfirmMs: DEFERRED_SPEECH_CONFIRM_MS }
         : {}),
       callbacks: {
-        onSpeechStarted: async () => {
+        onSpeechStarted: async ({ utteranceId }) => {
           // Voice STT providers return final transcripts only. Use the detector's
           // confirmed speech event so interruption does not wait for transcription.
           this.sessionLogger.debug("Voice VAD speech_started");
           this.isDetectorSpeaking = true;
           if (this.shouldDeferBargeIn()) {
-            this.deferBargeIn();
+            this.deferBargeIn(utteranceId);
             return;
           }
-          this.pendingClips.push({ deferred: false, duringEchoWarmup: false });
+          this.pendingClips.set(utteranceId, { deferred: false, duringEchoWarmup: false });
           this.emit({ type: "voice_input_state", payload: { isSpeaking: true } });
           await this.handleVoiceSpeechStart();
         },
@@ -652,6 +655,7 @@ export class VoiceSession {
           });
         },
         onFinalTranscript: async ({
+          utteranceId,
           transcript,
           language,
           durationMs,
@@ -676,6 +680,7 @@ export class VoiceSession {
             "Transcription result",
           );
           await this.handleTranscriptionResultPayload({
+            utteranceId,
             text: transcriptText,
             requestId,
             ...(language ? { language } : {}),
@@ -687,7 +692,8 @@ export class VoiceSession {
         onError: (error) => {
           this.sessionLogger.error({ err: error }, "Voice turn controller failed");
           this.isDetectorSpeaking = false;
-          this.clearPendingBargeIn();
+          // Utterances already heard keep their entries: the controller still delivers
+          // their transcripts, or times them out, and each is judged as it was heard.
           this.clearSpeechInProgress("turn controller error");
           this.setPhase("idle");
         },
@@ -1060,7 +1066,7 @@ export class VoiceSession {
     if (noise) {
       const hasAnotherSpeechSegment =
         this.isDetectorSpeaking ||
-        this.pendingClips.length > 0 ||
+        this.pendingClips.size > 0 ||
         this.pendingAudioSegments.length > 0;
       if (!hasAnotherSpeechSegment) {
         this.clearSpeechInProgress("sound during a reply was not speech");
@@ -1081,8 +1087,11 @@ export class VoiceSession {
   private async handleTranscriptionResultPayload(
     result: VoiceTranscriptionResultPayload,
   ): Promise<void> {
-    // Transcripts arrive in the order their utterances were heard.
-    const clip = this.pendingClips.shift();
+    const clip =
+      result.utteranceId === undefined ? undefined : this.pendingClips.get(result.utteranceId);
+    if (result.utteranceId !== undefined) {
+      this.pendingClips.delete(result.utteranceId);
+    }
     if (clip?.deferred) {
       if (await this.settlePendingBargeIn(result, clip)) {
         return;
@@ -1312,7 +1321,7 @@ export class VoiceSession {
     // COMPAT(voiceDeferredBargeIn): added in v0.16.0, remove the speech-start interrupt
     // for clients without the capability after 2027-05-12.
     return (
-      this.pendingClips.some((clip) => clip.deferred) ||
+      [...this.pendingClips.values()].some((clip) => clip.deferred) ||
       this.ttsManager.hasPendingPlayback() ||
       this.host.hasActiveAgentRun(this.voiceModeAgentId)
     );
@@ -1324,11 +1333,11 @@ export class VoiceSession {
    * breaks the reply up, so the reply keeps playing and the agent keeps running until a
    * transcript has the user's words.
    */
-  private deferBargeIn(): void {
+  private deferBargeIn(utteranceId: string): void {
     this.speechInProgress = true;
     this.capturingDeferredClip = true;
     const now = Date.now();
-    this.pendingClips.push({
+    this.pendingClips.set(utteranceId, {
       deferred: true,
       duringEchoWarmup: this.spokenReplies.some(
         (reply) =>
@@ -1363,7 +1372,7 @@ export class VoiceSession {
   }
 
   private clearPendingBargeIn(): void {
-    this.pendingClips = [];
+    this.pendingClips.clear();
     this.capturingDeferredClip = false;
     this.clearBargeInClipTimer();
   }
