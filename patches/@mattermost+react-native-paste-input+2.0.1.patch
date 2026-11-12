@@ -28,17 +28,132 @@ index 73466dd..8440ac9 100644
  
    auto textSize = textLayoutManager_
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-index 9e429b8..1d10014 100644
+index 1794b53..eca5e57 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-@@ -36,2 +36,2 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+@@ -33,8 +33,8 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+     return mOnPasteListener
+   }
+ 
 -  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
 -    val ic = super.onCreateInputConnection(outAttrs)
 +  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
 +    val ic = super.onCreateInputConnection(outAttrs) ?: return null
-@@ -58 +58 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+ 
+     EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
+ 
+@@ -55,6 +55,6 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+       true
+     }
+ 
 -    return InputConnectionCompat.createWrapper(ic!!, outAttrs, callback)
 +    return InputConnectionCompat.createWrapper(ic, outAttrs, callback)
+   }
+ }
+diff --git a/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm b/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm
+index 59ff531..599f602 100644
+--- a/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm
++++ b/node_modules/@mattermost/react-native-paste-input/ios/PasteInputModule.mm
+@@ -447,12 +447,19 @@ static void pasteInputInterceptedPasteIMP(id self, SEL _cmd, id sender)
+     }
+ 
+     // Try to extract files from the pasteboard. If nothing extractable, fall
+-    // back to the system paste handler — that's our signal that the pasteboard
+-    // only contained text/rich-text representations.
++    // back to the system paste handler — unless the pasteboard holds an image
++    // with no text, in which case notify JS so its clipboard reader can attach it.
+     UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
+     NSArray<NSDictionary *> *files = [pasteboard getCopiedFiles];
+ 
+     if (files.count == 0) {
++        if (pasteboard.hasImages && !pasteboard.hasStrings) {
++            [module sendEventWithName:@"onPaste" body:@{
++                @"nativeID": nativeID,
++                @"data": @[],
++            }];
++            return;
++        }
+         struct objc_super superData = {
+             .receiver = self,
+             .super_class = originalClass
+diff --git a/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m b/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m
+index 98b42c0..a03a392 100644
+--- a/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m
++++ b/node_modules/@mattermost/react-native-paste-input/ios/UIPasteboard+GetImageInfo.m
+@@ -29,6 +29,7 @@
+       // Skip representations that aren't raw bytes (e.g. NSString/NSURL).
+       // Image types are exceptions: their values are UIImage/NSData fetched via helpers below.
+       if (![item[type] isKindOfClass:[NSData class]] &&
++          ![item[type] isKindOfClass:[UIImage class]] &&
+           ![type isEqual:@"public.jpeg"] && ![type isEqual:@"public.png"] &&
+           ![type isEqual:@"com.compuserve.gif"] && ![type isEqual:@"public.heic"]) {
+         continue;
+@@ -36,12 +37,28 @@
+ 
+       @try {
+         NSString *uri = self.string;
+-        NSData *fileData = item[type];
++        NSData *fileData = nil;
+ 
+         if ([type isEqual:@"public.jpeg"] || [type isEqual:@"public.png"]) {
+           fileData = [self getDataForImageItem:item[type] type:type];
+-        } else if ([type isEqual:@"com.compuserve.gif"] || [type isEqual:@"public.heic"]) {
+-          fileData = [self dataForPasteboardType:type];
++        } else if ([type isEqual:@"com.compuserve.gif"]) {
++          fileData = [item[type] isKindOfClass:[NSData class]]
++            ? (NSData *)item[type]
++            : [[self dataForPasteboardType:type inItemSet:[NSIndexSet indexSetWithIndex:i]] firstObject];
++        } else if ([type isEqual:@"public.heic"]) {
++          id rawItem = item[type];
++          if (![rawItem isKindOfClass:[UIImage class]] && ![rawItem isKindOfClass:[NSData class]]) {
++            rawItem = [[self dataForPasteboardType:type inItemSet:[NSIndexSet indexSetWithIndex:i]] firstObject];
++          }
++          fileData = [self getDataForImageItem:rawItem type:@"public.jpeg"];
++        } else if ([item[type] isKindOfClass:[UIImage class]]) {
++          fileData = [self getDataForImageItem:item[type] type:@"public.png"];
++        } else if ([item[type] isKindOfClass:[NSData class]]) {
++          fileData = (NSData *)item[type];
++        }
++
++        if (fileData == nil || [fileData length] == 0) {
++          continue;
+         }
+         
+         SwimeProxy *swimeProxy = [SwimeProxy shared];
+@@ -86,11 +103,19 @@
+   return fileInfos;
+ }
+ 
+--(NSData *) getDataForImageItem:(NSData *)imageData type:(NSString *)type {
+-  UIImage *image;
+-  image = (UIImage *)imageData;
+-  size_t width = CGImageGetWidth(image.CGImage);
+-  size_t height = CGImageGetHeight(image.CGImage);
++-(nullable NSData *) getDataForImageItem:(nullable id)imageData type:(NSString *)type {
++  UIImage *image = nil;
++  if ([imageData isKindOfClass:[UIImage class]]) {
++    image = (UIImage *)imageData;
++  } else if ([imageData isKindOfClass:[NSData class]]) {
++    image = [UIImage imageWithData:(NSData *)imageData];
++  }
++  if (!image) {
++    return [imageData isKindOfClass:[NSData class]] ? (NSData *)imageData : nil;
++  }
++  CGImageRef cgImage = image.CGImage;
++  size_t width = cgImage ? CGImageGetWidth(cgImage) : (size_t)(image.size.width * image.scale);
++  size_t height = cgImage ? CGImageGetHeight(cgImage) : (size_t)(image.size.height * image.scale);
+   if (width > 6048 || height > 4032) {
+     image = [image vImageScaledImageWithSize:CGSizeMake(2048, 2048) contentMode:UIViewContentModeScaleAspectFit];
+   }
+@@ -99,7 +124,7 @@
+     return UIImagePNGRepresentation(image);
+   }
+ 
+-  return UIImageJPEGRepresentation(image, 1.0);
++  return UIImageJPEGRepresentation(image, 0.9);
+ }
+ 
+ @end
 diff --git a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
 index 51b9dfa..501badf 100644
 --- a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js

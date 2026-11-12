@@ -78,6 +78,8 @@ const patchedPackages = [
     patchPrefix: "react-native-svg+",
     cwd: "packages/app",
   },
+  // Android trailing-newline measurement + nullable InputConnection, imperative TextInput ref
+  // forwarding, and iOS pasteboard NSData/HEIC image extraction + empty-UTI signal (#7286).
   {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
