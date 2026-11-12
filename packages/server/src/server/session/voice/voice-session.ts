@@ -8,6 +8,10 @@ import { STTManager } from "../../agent/stt-manager.js";
 import type { SpeechToTextProvider, TextToSpeechProvider } from "../../speech/speech-provider.js";
 import type { TurnDetectionProvider } from "../../speech/turn-detection-provider.js";
 import { maybePersistTtsDebugAudio } from "../../agent/tts-debug.js";
+import {
+  createVoiceInputDebugRecorder,
+  type VoiceInputDebugRecorder,
+} from "../../agent/voice-input-debug.js";
 import { isPaseoDictationDebugEnabled } from "../../agent/recordings-debug.js";
 import {
   DictationStreamManager,
@@ -191,6 +195,7 @@ export class VoiceSession {
   private voiceInputChunkCount = 0;
   private voiceInputBytes = 0;
   private voiceInputWindowStartedAt = Date.now();
+  private voiceInputDebugRecorder: VoiceInputDebugRecorder | null = null;
 
   // Audio buffering for interruption handling
   private pendingAudioSegments: Array<{ audio: Buffer; format: string }> = [];
@@ -678,6 +683,10 @@ export class VoiceSession {
 
     this.sessionLogger.info("startVoiceTurnController connecting controller");
     this.voiceTurnController = controller;
+    this.voiceInputDebugRecorder = await createVoiceInputDebugRecorder(
+      this.sessionId,
+      this.sessionLogger,
+    );
     await controller.start();
     if (this.closed) await controller.stop();
     this.sessionLogger.info("startVoiceTurnController connected");
@@ -688,6 +697,8 @@ export class VoiceSession {
     this.clearPendingBargeIn();
     this.spokenReplies = [];
     this.clearSpeechInProgress("voice turn controller stopped");
+    this.voiceInputDebugRecorder?.close();
+    this.voiceInputDebugRecorder = null;
     if (!this.voiceTurnController) {
       return;
     }
@@ -771,6 +782,7 @@ export class VoiceSession {
       this.voiceInputChunkCount = 0;
       this.voiceInputBytes = 0;
     }
+    this.voiceInputDebugRecorder?.append(Buffer.from(msg.audio, "base64"), chunkFormat);
     await this.voiceTurnController.appendClientChunk({
       audioBase64: msg.audio,
       format: chunkFormat,
