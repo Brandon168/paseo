@@ -316,6 +316,9 @@ export function createPluginWorker(options: {
       // The IPC peer is this installation's own daemon, so its messages are already valid.
       // Skipping validation keeps its generated validators (~65-120 MB) out of every plugin.
       trustInboundMessages: true,
+      // The channel is a pipe to the daemon (or an in-process queue for built-in plugins); its
+      // loss is reported directly, so a 10 s ping would only wake both sides.
+      livenessHeartbeat: false,
     });
     paseo = createPaseoApi(daemonClient);
     await daemonClient.connect();
@@ -646,6 +649,7 @@ export function createPluginWorker(options: {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let worker: ReturnType<typeof createPluginWorker> | null = null;
+  let closedByShutdown = false;
   const handlers = new Set<(message: PluginProcessRequest) => void>();
   const channel: PluginWorkerChannel = {
     send(message, callback) {
@@ -659,9 +663,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       };
     },
     disconnect() {
+      closedByShutdown = true;
       process.disconnect();
     },
   };
+  // The daemon worker owns this process through the IPC channel. When the channel closes without
+  // this process closing it (the worker crashed or was killed), nothing can reach the plugin any
+  // more, so exit instead of running on as an orphan. A normal shutdown closes the channel itself
+  // and lets work still in flight finish.
+  process.once("disconnect", () => {
+    if (!closedByShutdown) process.exit(0);
+  });
   // Messages that arrive while the bundle's runtimes load wait here, in order.
   let preparing: unknown[] | null = null;
   const deliver = (message: unknown) => {
