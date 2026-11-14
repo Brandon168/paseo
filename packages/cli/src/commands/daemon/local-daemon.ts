@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { startDaemonInstance, resolvePaseoHome } from "@getpaseo/server/daemon-control";
-import { resolveDaemonRuntime } from "./daemon-runtime.js";
 const require = createRequire(import.meta.url);
 function resolveServerRunnerFromDir(currentDir: string): string | null {
   const packageJsonPath = path.join(currentDir, "package.json");
@@ -45,7 +44,6 @@ export async function launchLocalDaemon(options: {
   home: string;
   timeoutMs?: number;
   foreground?: boolean;
-  runtime?: string;
 }) {
   const abort = new AbortController();
   const cancel = () => abort.abort();
@@ -53,10 +51,9 @@ export async function launchLocalDaemon(options: {
   process.once("SIGTERM", cancel);
   try {
     const entry = resolveDaemonRunnerEntry();
-    const runtime = resolveDaemonRuntime({ requested: options.runtime });
     return await startDaemonInstance({
       home: resolvePaseoHome({ PASEO_HOME: options.home }),
-      command: runtime.command,
+      command: process.execPath,
       args: [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry],
       env: process.env,
       mode: options.foreground ? "deployment" : "managed",

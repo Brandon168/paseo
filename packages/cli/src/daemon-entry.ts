@@ -2,7 +2,7 @@
 //
 // `paseo daemon run` spawns the supervisor and stays resident only to wait for it, keeping the
 // whole CLI loaded (~70-120 MB). A service unit can run this instead; the runtime is whichever
-// binary runs it, e.g. `ExecStart=/usr/bin/bun …/paseo-daemon --home ~/.paseo`. It applies the
+// binary runs it, e.g. `ExecStart=/usr/bin/node …/paseo-daemon --home ~/.paseo`. It applies the
 // same deployment environment as `paseo daemon run` and imports nothing but the supervisor.
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -31,14 +31,8 @@ const passthrough: string[] = [];
 const args = process.argv.slice(2);
 for (let index = 0; index < args.length; index++) {
   const arg = args[index]!;
-  if (arg === "--home") {
-    const value = args[++index];
-    if (!value) {
-      process.stderr.write("paseo-daemon: --home needs a directory\n");
-      process.exit(2);
-    }
-    process.env.PASEO_HOME = value;
-  } else if (arg.startsWith("--home=")) process.env.PASEO_HOME = arg.slice("--home=".length);
+  if (arg === "--home") process.env.PASEO_HOME = args[++index];
+  else if (arg.startsWith("--home=")) process.env.PASEO_HOME = arg.slice("--home=".length);
   else passthrough.push(arg);
 }
 const home = process.env.PASEO_HOME;

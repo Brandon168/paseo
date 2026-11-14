@@ -1,4 +1,4 @@
-import { spawnPty } from "./pty-backend.js";
+import * as pty from "node-pty";
 import type { Terminal as TerminalType } from "@xterm/headless";
 import { randomUUID } from "crypto";
 import {
@@ -820,7 +820,7 @@ export async function createTerminal(
 
   await assertTerminalCommandCanStart({ command, cwd, env: terminalEnv });
 
-  const ptyProcess = spawnPty(spawnCommand, spawnArgs, {
+  const ptyProcess = pty.spawn(spawnCommand, spawnArgs, {
     name: "xterm-256color",
     cols,
     rows,

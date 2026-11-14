@@ -22,7 +22,7 @@ import {
   submitNewWorkspaceEmpty,
 } from "../support/helpers/new-workspace";
 import { selectSidebarStatusGrouping } from "../support/helpers/sidebar";
-import { killProcessTree, spawnDaemonSupervisor } from "../support/helpers/spawn-node";
+import { killProcessTree, spawnTsx } from "../support/helpers/spawn-node";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
 import { getVisibleWorkspaceAgentTabIds } from "../support/helpers/workspace-tabs";
 
@@ -238,7 +238,8 @@ async function startRestartDaemon(input: {
   }
 
   const serverDir = path.resolve(__dirname, "../../../server");
-  const child = spawnDaemonSupervisor(serverDir, {
+  const child = spawnTsx("scripts/supervisor-entrypoint.ts", ["--dev"], {
+    cwd: serverDir,
     env: withDisabledE2ESpeechEnv({
       ...process.env,
       PASEO_HOME: input.paseoHome,
