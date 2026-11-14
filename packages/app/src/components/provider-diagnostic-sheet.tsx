@@ -75,7 +75,7 @@ function DiscoveredModelRow({
         {model.label}
       </Text>
       <Text
-        style={sheetStyles.monoHint}
+        style={[sheetStyles.monoHint, sheetStyles.customModelText]}
         numberOfLines={1}
         selectable
         dataSet={CODE_SURFACE_DATASET}
@@ -89,13 +89,15 @@ function DiscoveredModelRow({
       ) : (
         <View style={sheetStyles.modelRowFiller} />
       )}
-      <Switch
-        value={!hidden}
-        onValueChange={handleValueChange}
-        disabled={saving}
-        accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
-        testID={`provider-model-visible-${model.id}`}
-      />
+      <View style={sheetStyles.modelSwitch}>
+        <Switch
+          value={!hidden}
+          onValueChange={handleValueChange}
+          disabled={saving}
+          accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
+          testID={`provider-model-visible-${model.id}`}
+        />
+      </View>
     </View>
   );
 }
@@ -927,6 +929,9 @@ const sheetStyles = StyleSheet.create((theme) => ({
   },
   modelRowFiller: {
     flex: 1,
+  },
+  modelSwitch: {
+    flexShrink: 0,
   },
   hiddenModelText: {
     color: theme.colors.foregroundMuted,
