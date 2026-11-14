@@ -1,98 +1,95 @@
 import { expect, test } from "vitest";
 import {
-  AdaptiveEventLoopDelayMonitor,
-  BUSY_EVENT_LOOP_DELAY_RESOLUTION_MS,
-  IDLE_EVENT_LOOP_DELAY_RESOLUTION_MS,
-  type EventLoopDelaySources,
+  EVENT_LOOP_DELAY_RESOLUTION_MS,
+  EventLoopDelayMonitor,
+  type DelayHistogram,
 } from "./event-loop-delay.js";
 
-class FakeRuntime implements EventLoopDelaySources {
-  created: number[] = [];
-  recordsInterval = false;
-  enabled = new Set<number>();
-  private loop = { idle: 0, active: 0 };
-  private cpu = 0;
-  private now = 0;
-  constructor(private readonly reportsLoopUtilization: boolean) {}
+const MS = 1e6;
 
-  createMonitor(resolutionMs: number) {
-    const id = this.created.push(resolutionMs) - 1;
-    // Like Node when recordsInterval: each sample is the interval plus its lateness.
-    const base = this.recordsInterval ? resolutionMs * 1e6 : 0;
-    return {
-      enable: () => (this.enabled.add(id), true),
-      disable: () => this.enabled.delete(id),
-      reset: () => {},
-      percentile: () => base + 2e6,
-      max: base + 5e6,
-    };
+/** A histogram like monitorEventLoopDelay's: values are the sampling interval plus lateness. */
+class FakeHistogram implements DelayHistogram {
+  enabled = false;
+  resets = 0;
+  samplesNs: number[] = [];
+
+  enable(): boolean {
+    this.enabled = true;
+    return true;
   }
-  loopUtilization() {
-    return this.reportsLoopUtilization ? { ...this.loop } : { idle: 0, active: 0 };
+  disable(): boolean {
+    this.enabled = false;
+    return true;
   }
-  cpuMicros() {
-    return this.cpu;
+  reset(): void {
+    this.resets += 1;
+    this.samplesNs = [];
   }
-  nowMs() {
-    return this.now;
+  percentile(percentile: number): number {
+    if (this.samplesNs.length === 0) return 0;
+    const sorted = [...this.samplesNs].sort((a, b) => a - b);
+    const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, index)];
   }
-  /** Advances one 30 s metrics window in which the loop ran for activeMs. */
-  window(activeMs: number) {
-    this.now += 30_000;
-    this.loop = { idle: this.loop.idle + 30_000 - activeMs, active: this.loop.active + activeMs };
-    this.cpu += activeMs * 1000;
+  get max(): number {
+    return this.samplesNs.length === 0 ? 0 : Math.max(...this.samplesNs);
+  }
+  /** Records samples that ran the given number of ms late. */
+  record(lateMs: number[]): void {
+    for (const late of lateMs) {
+      this.samplesNs.push((EVENT_LOOP_DELAY_RESOLUTION_MS + late) * MS);
+    }
   }
 }
 
-test.each([true, false])(
-  "samples coarsely after an idle window and finely again after a busy one (loop utilization reported: %s)",
-  (reportsLoopUtilization) => {
-    const runtime = new FakeRuntime(reportsLoopUtilization);
-    const monitor = new AdaptiveEventLoopDelayMonitor(runtime);
-    expect(monitor.resolutionMs).toBe(BUSY_EVENT_LOOP_DELAY_RESOLUTION_MS);
+function startMonitor(): {
+  monitor: EventLoopDelayMonitor;
+  histogram: FakeHistogram;
+  requested: number[];
+} {
+  const histogram = new FakeHistogram();
+  const requested: number[] = [];
+  const monitor = new EventLoopDelayMonitor((resolutionMs) => {
+    requested.push(resolutionMs);
+    return histogram;
+  });
+  return { monitor, histogram, requested };
+}
 
-    runtime.window(20);
-    expect(monitor.snapshot()).toEqual({ p50Ms: 2, p99Ms: 2, maxMs: 5 });
-    expect(monitor.resolutionMs).toBe(IDLE_EVENT_LOOP_DELAY_RESOLUTION_MS);
+test("samples every 100 ms instead of every 10 ms", () => {
+  const { histogram, requested } = startMonitor();
+  expect(requested).toEqual([100]);
+  expect(histogram.enabled).toBe(true);
+});
 
-    runtime.window(20);
-    monitor.snapshot();
-    expect(runtime.created).toEqual([100, 1000]);
+test("reports how late samples ran, not the sampling interval", () => {
+  const { monitor, histogram } = startMonitor();
+  histogram.record([0, 1, 2, 2, 3]);
+  expect(monitor.snapshot()).toEqual({ p50Ms: 2, p99Ms: 3, maxMs: 3 });
+});
 
-    // A 400 ms stall makes its window busy.
-    runtime.window(400);
-    monitor.snapshot();
-    expect(monitor.resolutionMs).toBe(BUSY_EVENT_LOOP_DELAY_RESOLUTION_MS);
-    expect(runtime.created).toEqual([100, 1000, 100]);
-    expect([...runtime.enabled]).toEqual([2]);
+test("a late sample shows up in p99 and max", () => {
+  const { monitor, histogram } = startMonitor();
+  histogram.record([1, 1, 1, 1, 400]);
+  expect(monitor.snapshot()).toEqual({ p50Ms: 1, p99Ms: 400, maxMs: 400 });
+});
 
-    monitor.stop();
-    expect(runtime.enabled.size).toBe(0);
-  },
-);
+test("each snapshot covers only the samples since the previous one", () => {
+  const { monitor, histogram } = startMonitor();
+  histogram.record([250]);
+  expect(monitor.snapshot()).toEqual({ p50Ms: 250, p99Ms: 250, maxMs: 250 });
+  expect(histogram.resets).toBe(1);
+  histogram.record([2]);
+  expect(monitor.snapshot()).toEqual({ p50Ms: 2, p99Ms: 2, maxMs: 2 });
+});
 
-test.each([true, false])(
-  "reports lateness, not the sampling interval, at either resolution (interval recorded: %s)",
-  (recordsInterval) => {
-    const runtime = new FakeRuntime(true);
-    runtime.recordsInterval = recordsInterval;
-    const monitor = new AdaptiveEventLoopDelayMonitor(runtime);
-    runtime.window(20);
-    expect(monitor.snapshot()).toEqual({ p50Ms: 2, p99Ms: 2, maxMs: 5 });
-    expect(monitor.resolutionMs).toBe(IDLE_EVENT_LOOP_DELAY_RESOLUTION_MS);
-    runtime.window(20);
-    expect(monitor.snapshot()).toEqual({ p50Ms: 2, p99Ms: 2, maxMs: 5 });
-  },
-);
+test("a window without samples reads zero", () => {
+  const { monitor } = startMonitor();
+  expect(monitor.snapshot()).toEqual({ p50Ms: 0, p99Ms: 0, maxMs: 0 });
+});
 
-test("an idle loop reports near-zero delay with the real monitor", async () => {
-  const monitor = new AdaptiveEventLoopDelayMonitor();
-  try {
-    await new Promise((resolve) => setTimeout(resolve, 450));
-    const snapshot = monitor.snapshot();
-    // Counting the 100 ms sampling interval would put the median near 100 ms.
-    expect(snapshot.p50Ms).toBeLessThan(30);
-  } finally {
-    monitor.stop();
-  }
+test("stop disables the histogram", () => {
+  const { monitor, histogram } = startMonitor();
+  monitor.stop();
+  expect(histogram.enabled).toBe(false);
 });
