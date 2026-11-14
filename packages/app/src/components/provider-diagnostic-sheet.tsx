@@ -68,34 +68,42 @@ function DiscoveredModelRow({
   );
   return (
     <View style={sheetStyles.modelRow} testID={`provider-model-row-${model.id}`}>
-      <Text
-        style={[sheetStyles.modelTitle, hidden && sheetStyles.hiddenModelText]}
-        numberOfLines={1}
-      >
-        {model.label}
-      </Text>
-      <Text
-        style={sheetStyles.monoHint}
-        numberOfLines={1}
-        selectable
-        dataSet={CODE_SURFACE_DATASET}
-      >
-        {model.id}
-      </Text>
-      {model.description ? (
-        <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
-          {model.description}
+      {/* Name over id in a column that shrinks, so a long name or id truncates instead of
+          pushing the switch out of the row. */}
+      <View style={sheetStyles.modelText}>
+        <Text
+          style={[
+            sheetStyles.modelTitle,
+            sheetStyles.shrinkText,
+            hidden && sheetStyles.hiddenModelText,
+          ]}
+          numberOfLines={1}
+        >
+          {model.label}
         </Text>
-      ) : (
-        <View style={sheetStyles.modelRowFiller} />
-      )}
-      <Switch
-        value={!hidden}
-        onValueChange={handleValueChange}
-        disabled={saving}
-        accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
-        testID={`provider-model-visible-${model.id}`}
-      />
+        <Text
+          style={[sheetStyles.monoHint, sheetStyles.shrinkText]}
+          numberOfLines={1}
+          selectable
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {model.id}
+        </Text>
+        {model.description ? (
+          <Text style={sheetStyles.descriptionStacked} numberOfLines={1}>
+            {model.description}
+          </Text>
+        ) : null}
+      </View>
+      <View style={sheetStyles.modelSwitch}>
+        <Switch
+          value={!hidden}
+          onValueChange={handleValueChange}
+          disabled={saving}
+          accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
+          testID={`provider-model-visible-${model.id}`}
+        />
+      </View>
     </View>
   );
 }
@@ -853,11 +861,6 @@ const sheetStyles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     flexShrink: 0,
   },
-  descriptionInline: {
-    flex: 1,
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.foregroundMuted,
-  },
   errorText: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.destructive,
@@ -927,6 +930,22 @@ const sheetStyles = StyleSheet.create((theme) => ({
   },
   modelRowFiller: {
     flex: 1,
+  },
+  modelText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  shrinkText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  descriptionStacked: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foregroundMuted,
+  },
+  modelSwitch: {
+    flexShrink: 0,
   },
   hiddenModelText: {
     color: theme.colors.foregroundMuted,
