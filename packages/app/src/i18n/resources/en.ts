@@ -159,6 +159,7 @@ export const en = {
     },
     attachments: {
       addImage: "Add image",
+      takePhoto: "Take photo",
       pasteImage: "Paste image",
       addFile: "Upload file",
       addIssueOrPr: "Add issue or PR",
@@ -1697,8 +1698,10 @@ export const en = {
   imageAttachmentPicker: {
     permissionTitle: "Permission required",
     permissionMessage: "Please allow access to your photo library to attach images.",
+    cameraPermissionMessage: "Please allow camera access to take a photo to attach.",
     errorTitle: "Error",
     failedToSelect: "Failed to select image",
+    failedToCapture: "Failed to take photo",
     dialogTitle: "Attach images",
     dialogFilterName: "Images",
   },
