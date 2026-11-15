@@ -7,7 +7,9 @@ export function formatContextPercentage(value: number, locale?: string): string 
 
 export function formatTokenCount(value: number): string {
   if (value >= 1_000_000) {
-    return `${Math.round(value / 1_000_000)}m`;
+    const millions = value / 1_000_000;
+    // One decimal below 10m so 1.76m reads "1.8m", not "2m".
+    return millions < 10 ? `${Number(millions.toFixed(1))}m` : `${Math.round(millions)}m`;
   }
   if (value >= 1_000) {
     return `${Math.round(value / 1_000)}k`;

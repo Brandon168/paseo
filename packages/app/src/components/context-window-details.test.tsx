@@ -93,7 +93,7 @@ describe("ContextWindowDetails", () => {
     expect(screen.getByText("Session 100% cached")).toBeTruthy();
     expect(screen.getByText("Session tokens")).toBeTruthy();
     for (const [label, value] of [
-      ["Cache read", "2m"],
+      ["Cache read", "1.8m"],
       ["Cache write", "4k"],
       ["Uncached input", "56"],
       ["Output", "9k"],
