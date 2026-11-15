@@ -99,6 +99,7 @@ class WorkspaceStatus {
     listProviderSubagentActivity: async () => this.providerSubagents,
     listTerminalActivityContributions: async () => this.terminals,
     isProviderVisibleToClient: () => true,
+    resolveWorkspaceName: (workspace) => workspace.displayName,
     buildWorkspaceDescriptor: async ({ workspace }) => ({
       id: workspace.workspaceId,
       projectId: workspace.projectId,
@@ -634,6 +635,7 @@ describe("WorkspaceDirectory empty projects", () => {
       listProviderSubagentActivity: async () => [],
       listTerminalActivityContributions: async () => [],
       isProviderVisibleToClient: () => true,
+      resolveWorkspaceName: (workspace) => workspace.displayName,
       buildWorkspaceDescriptor: async ({ workspace }) => ({
         id: workspace.workspaceId,
         projectId: workspace.projectId,
@@ -799,6 +801,9 @@ test("Git observation targets exclude archived records without hydrating app des
     listTerminalActivityContributions: unexpectedHydration,
     buildWorkspaceDescriptor: unexpectedHydration,
     isProviderVisibleToClient: () => true,
+    resolveWorkspaceName: () => {
+      throw new Error("Watcher reconciliation resolved a workspace name");
+    },
   });
   expect(await directory.listObservationTargets()).toEqual([
     { id: "observed", workspaceDirectory: "/workspace/observed", workspaceKind: "local_checkout" },
@@ -977,6 +982,7 @@ test("scoped descriptor builds allocate independently of archived history", asyn
       listProviderSubagentActivity: async () => [],
       listTerminalActivityContributions: async () => [],
       isProviderVisibleToClient: () => true,
+      resolveWorkspaceName: () => "workspace",
       buildWorkspaceDescriptor: async ({ workspace }) => ({
         id: workspace.workspaceId,
         projectId: "p",
@@ -1026,3 +1032,141 @@ test("scoped descriptor builds allocate independently of archived history", asyn
     await rm(home, { recursive: true, force: true });
   }
 }, 30000);
+
+describe("WorkspaceDirectory query lookups", () => {
+  // Names stand in for git-derived names: they differ from the stored display name.
+  function lookupDirectory(workspaces: PersistedWorkspaceRecord[]) {
+    const built: string[] = [];
+    const nameOf = (workspace: PersistedWorkspaceRecord) => `branch/${workspace.displayName}`;
+    const directory = new WorkspaceDirectory({
+      logger: createTestLogger(),
+      projectRegistry: {
+        list: async () =>
+          ["alpha", "beta"].map((projectId) => ({
+            projectId,
+            rootPath: `/workspace/${projectId}`,
+            kind: "git" as const,
+            displayName: projectId,
+            customName: null,
+            createdAt: NOW,
+            updatedAt: NOW,
+            archivedAt: null,
+          })),
+      },
+      workspaceRegistry: {
+        listActive: async () => workspaces.filter((w) => !w.archivedAt),
+        get: async (id) => workspaces.find((w) => w.workspaceId === id) ?? null,
+      },
+      listAgentPayloads: async () => [],
+      workspaceLastUserMessageTimes: async () => new Map(),
+      listProviderSubagentActivity: async () => [],
+      listTerminalActivityContributions: async () => [],
+      isProviderVisibleToClient: () => true,
+      resolveWorkspaceName: nameOf,
+      buildWorkspaceDescriptor: async ({ workspace }) => {
+        built.push(workspace.workspaceId);
+        return {
+          id: workspace.workspaceId,
+          projectId: workspace.projectId,
+          projectDisplayName: workspace.projectId,
+          projectCustomName: null,
+          projectRootPath: `/workspace/${workspace.projectId}`,
+          workspaceDirectory: workspace.cwd,
+          projectKind: "git",
+          workspaceKind: workspace.kind,
+          background: workspace.background,
+          name: nameOf(workspace),
+          archivingAt: null,
+          status: "done",
+          activityAt: null,
+          diffStat: null,
+          gitRuntime: null,
+          githubRuntime: null,
+        };
+      },
+    });
+    const query = async (text: string) => {
+      built.length = 0;
+      const result = await directory.listFetchEntries({
+        type: "fetch_workspaces_request",
+        requestId: `query-${text}`,
+        filter: { query: text },
+      });
+      return {
+        ids: result.entries.map((entry) => entry.id).sort(),
+        built: [...built].sort(),
+      };
+    };
+    return { query };
+  }
+
+  function record(input: {
+    id: string;
+    projectId?: string;
+    displayName?: string;
+    background?: boolean;
+    archivedAt?: string;
+  }): PersistedWorkspaceRecord {
+    return {
+      workspaceId: input.id,
+      projectId: input.projectId ?? "alpha",
+      cwd: `/workspace/${input.id}`,
+      kind: "worktree",
+      displayName: input.displayName ?? input.id,
+      createdAt: NOW,
+      updatedAt: NOW,
+      archivedAt: input.archivedAt ?? null,
+      ...(input.background ? { background: true } : {}),
+    };
+  }
+
+  const many = Array.from({ length: 40 }, (_, index) =>
+    record({
+      id: `wks_${String(index).padStart(3, "0")}`,
+      displayName: `ws${index}`,
+    }),
+  );
+
+  test("a lookup by id builds only that workspace's descriptor", async () => {
+    const { query } = lookupDirectory(many);
+
+    expect(await query("wks_017")).toEqual({
+      ids: ["wks_017"],
+      built: ["wks_017"],
+    });
+  });
+
+  test("still matches on the derived name and the project id", async () => {
+    const { query } = lookupDirectory([
+      ...many,
+      record({ id: "wks_login", projectId: "beta", displayName: "login-form" }),
+      record({ id: "wks_other", projectId: "beta", displayName: "settings" }),
+    ]);
+
+    expect(await query("BRANCH/LOGIN")).toEqual({
+      ids: ["wks_login"],
+      built: ["wks_login"],
+    });
+    expect(await query("beta")).toEqual({
+      ids: ["wks_login", "wks_other"],
+      built: ["wks_login", "wks_other"],
+    });
+  });
+
+  test("keeps the background and archived rules", async () => {
+    const { query } = lookupDirectory([
+      record({ id: "wks_helper", displayName: "helper", background: true }),
+      record({ id: "wks_gone", displayName: "gone", archivedAt: NOW }),
+    ]);
+
+    expect((await query("wks_helper")).ids).toEqual(["wks_helper"]);
+    expect((await query("helper")).ids).toEqual([]);
+    expect(await query("wks_gone")).toEqual({ ids: [], built: [] });
+  });
+
+  test("a query that matches nothing builds nothing", async () => {
+    const { query } = lookupDirectory(many);
+
+    expect(await query("no-such-workspace")).toEqual({ ids: [], built: [] });
+  });
+});

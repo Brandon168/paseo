@@ -1320,6 +1320,7 @@ export class Session {
       listTerminalActivityContributions: () => this.listTerminalActivityContributions(),
       isProviderVisibleToClient: (provider) => this.isProviderVisibleToClient(provider),
       buildWorkspaceDescriptor: (input) => this.buildWorkspaceDescriptor(input),
+      resolveWorkspaceName: (workspace) => this.resolveGitWorkspaceName(workspace),
     });
 
     this.voiceSessions = new VoiceSessions(
@@ -6166,6 +6167,19 @@ export class Session {
     };
   }
 
+  // The name buildWorkspaceDescriptor gives with git data: the title, else the
+  // checkout's branch from the git snapshot, else the stored display name.
+  private resolveGitWorkspaceName(workspace: PersistedWorkspaceRecord): string {
+    const snapshot =
+      workspace.kind === "directory" ? undefined : this.workspaceRuntimeStore.get(workspace.cwd);
+    if (!snapshot) {
+      return resolveWorkspaceDisplayName(workspace);
+    }
+    const checkout = checkoutLiteFromGitSnapshot(workspace.cwd, snapshot.git);
+    const displayName = deriveWorkspaceDisplayName({ cwd: workspace.cwd, checkout });
+    return resolveWorkspaceName({ title: workspace.title, derivedDisplayName: displayName });
+  }
+
   private async describeWorkspaceRecordWithGitData(
     workspace: PersistedWorkspaceRecord,
     projectRecord?: PersistedProjectRecord | null,
@@ -6176,12 +6190,9 @@ export class Session {
       return base;
     }
 
-    const checkout = checkoutLiteFromGitSnapshot(workspace.cwd, snapshot.git);
-    const displayName = deriveWorkspaceDisplayName({ cwd: workspace.cwd, checkout });
-
     return {
       ...base,
-      name: resolveWorkspaceName({ title: workspace.title, derivedDisplayName: displayName }),
+      name: this.resolveGitWorkspaceName(workspace),
       diffStat: snapshot.git.diffStat ?? null,
       gitRuntime: this.buildWorkspaceGitRuntimePayload(snapshot) ?? undefined,
       githubRuntime: this.buildWorkspaceGitHubRuntimePayload(snapshot),

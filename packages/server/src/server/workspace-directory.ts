@@ -91,6 +91,9 @@ export interface WorkspaceDirectoryDeps {
     projectRecord?: PersistedProjectRecord | null;
     includeGitData: boolean;
   }): Promise<WorkspaceDescriptorPayload>;
+  // The `name` that buildWorkspaceDescriptor gives this workspace with git data,
+  // computed without building the descriptor.
+  resolveWorkspaceName(workspace: PersistedWorkspaceRecord): string;
 }
 
 export function summarizeFetchWorkspacesEntries(entries: Iterable<FetchWorkspacesResponseEntry>): {
@@ -155,6 +158,20 @@ export function workspaceIdsForProjects(
     if (projectIds.has(workspace.projectId)) workspaceIds.add(workspace.workspaceId);
   }
   return Array.from(workspaceIds);
+}
+
+function matchesWorkspaceQuery(input: {
+  query: string;
+  workspace: Pick<WorkspaceDescriptorPayload, "id" | "projectId" | "name">;
+}): boolean {
+  const query = input.query.trim().toLocaleLowerCase();
+  if (query.length === 0) {
+    return true;
+  }
+  const { workspace } = input;
+  return [workspace.name, workspace.projectId, workspace.id].some((value) =>
+    value.toLocaleLowerCase().includes(query),
+  );
 }
 
 function activeWorkspaceRecords(
@@ -656,15 +673,40 @@ export class WorkspaceDirectory {
       }
     }
 
-    if (filter.query && filter.query.trim().length > 0) {
-      const query = filter.query.trim().toLocaleLowerCase();
-      const haystacks = [workspace.name, workspace.projectId, workspace.id];
-      if (!haystacks.some((value) => value.toLocaleLowerCase().includes(query))) {
-        return false;
-      }
+    if (filter.query && !matchesWorkspaceQuery({ query: filter.query, workspace })) {
+      return false;
     }
 
     return true;
+  }
+
+  // A query matches only on id, project id and name, which the records give
+  // without building descriptors. Plugins look a workspace up by id with a query
+  // (the plugin API has no get), so building every descriptor made each lookup
+  // cost as much as listing all workspaces. Returns null when there is no query.
+  private async workspaceIdsMatchingQuery(
+    filter: FetchWorkspacesRequestFilter | undefined,
+  ): Promise<string[] | null> {
+    const query = filter?.query;
+    if (!query || query.trim().length === 0) {
+      return null;
+    }
+    const [workspaces, projects] = await Promise.all([
+      this.deps.workspaceRegistry.listActive(),
+      this.deps.projectRegistry.list(),
+    ]);
+    return activeWorkspaceRecords(workspaces, projects)
+      .filter((workspace) =>
+        matchesWorkspaceQuery({
+          query,
+          workspace: {
+            id: workspace.workspaceId,
+            projectId: workspace.projectId,
+            name: this.deps.resolveWorkspaceName(workspace),
+          },
+        }),
+      )
+      .map((workspace) => workspace.workspaceId);
   }
 
   async listFetchEntries(request: FetchWorkspacesRequestMessage): Promise<{
@@ -674,7 +716,19 @@ export class WorkspaceDirectory {
   }> {
     const filter = request.filter;
     const sort = this.pager.normalizeSort(request.sort);
-    let entries = await this.listDescriptors();
+    const queryMatchIds = await this.workspaceIdsMatchingQuery(filter);
+    let entries: WorkspaceDescriptorPayload[];
+    if (!queryMatchIds) {
+      entries = await this.listDescriptors();
+    } else if (queryMatchIds.length === 0) {
+      entries = [];
+    } else {
+      const descriptors = await this.buildDescriptorMap({
+        includeGitData: true,
+        workspaceIds: queryMatchIds,
+      });
+      entries = Array.from(descriptors.values());
+    }
     const listedCount = entries.length;
     entries = entries.filter((workspace) => this.matchesFilter({ workspace, filter }));
     const filteredCount = entries.length;
