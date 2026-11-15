@@ -11,7 +11,11 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main-module.mjs";
+
+// The fork this script ships in, so it works from any directory (the weekly review runs it from ~/assistant).
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const STATUSES = new Set(["fork-only", "pr-open", "upstream", "dropped"]);
 const STATUSES_WITH_PR = new Set(["pr-open", "upstream"]);
@@ -69,7 +73,7 @@ function parseArgs(argv) {
   }
 
   if (!options.file) {
-    options.file = path.join(gitRepoRoot() ?? process.cwd(), "FORK.md");
+    options.file = path.join(REPO_ROOT, "FORK.md");
   }
 
   return options;
@@ -246,19 +250,19 @@ function checkPullRequest(entry, report, prStates) {
   }
 }
 
-function git(args, options = {}) {
+function git(args) {
   return execFileSync("git", args, {
+    cwd: REPO_ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
-    ...options,
   });
 }
 
-function gitRepoRoot() {
+function isGitCheckout() {
   try {
-    return git(["rev-parse", "--show-toplevel"]).trim();
+    return git(["rev-parse", "--is-inside-work-tree"]).trim() === "true";
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -373,8 +377,8 @@ function main(argv) {
     process.exit(2);
   }
 
-  if (!gitRepoRoot()) {
-    process.stderr.write("Run this from inside the fork's git checkout.\n");
+  if (!isGitCheckout()) {
+    process.stderr.write(`${REPO_ROOT} is not a git checkout; pull the fork first.\n`);
     process.exit(2);
   }
 
