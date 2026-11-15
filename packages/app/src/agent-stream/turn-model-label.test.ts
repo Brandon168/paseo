@@ -29,13 +29,17 @@ const entries: ProviderSnapshotEntry[] = [
 ];
 
 describe("formatTurnModelLabel", () => {
-  it("uses the picker's display name and the thinking option's label", () => {
+  it("uses the picker's display name, the route and the thinking option's label", () => {
     expect(
       formatTurnModelLabel(
-        { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "medium" },
+        {
+          provider: "opencode",
+          modelId: "claude-agent/opus",
+          thinkingOptionId: "medium",
+        },
         entries,
       ),
-    ).toBe("Opus 5.5 · Medium");
+    ).toBe("Opus 5.5 · claude-agent · Medium");
   });
 
   it("keeps a route-bearing custom name whole", () => {
@@ -51,6 +55,46 @@ describe("formatTurnModelLabel", () => {
     ).toBe("DS V4.1 Flash · Direct · high");
   });
 
+  it("tells the same model on two routes apart", () => {
+    const twoRoutes: ProviderSnapshotEntry[] = [
+      {
+        ...entries[0]!,
+        models: [
+          ...(entries[0]!.models ?? []),
+          {
+            provider: "opencode",
+            id: "vercel-brandon-pro/anthropic/claude-opus-5.5",
+            label: "Claude Opus 5.5",
+            thinkingOptions: [{ id: "high", label: "High" }],
+          },
+        ],
+      },
+    ];
+    expect(
+      formatTurnModelLabel(
+        {
+          provider: "opencode",
+          modelId: "vercel-brandon-pro/anthropic/claude-opus-5.5",
+          thinkingOptionId: "high",
+        },
+        twoRoutes,
+      ),
+    ).toBe("Claude Opus 5.5 · vercel-brandon-pro · High");
+  });
+
+  it("leaves out the route for a model id without one", () => {
+    expect(
+      formatTurnModelLabel({ provider: "claude", modelId: "claude-opus-5-5" }, [
+        {
+          provider: "claude",
+          status: "ready",
+          enabled: true,
+          models: [{ provider: "claude", id: "claude-opus-5-5", label: "Opus 5.5" }],
+        },
+      ]),
+    ).toBe("Opus 5.5");
+  });
+
   it("finds a model by alias", () => {
     expect(
       formatTurnModelLabel({ provider: "opencode", modelId: "deepseek-v4.1-flash" }, entries),
@@ -60,29 +104,45 @@ describe("formatTurnModelLabel", () => {
   it("omits the thinking level when none was set", () => {
     expect(
       formatTurnModelLabel(
-        { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: null },
+        {
+          provider: "opencode",
+          modelId: "claude-agent/opus",
+          thinkingOptionId: null,
+        },
         entries,
       ),
-    ).toBe("Opus 5.5");
+    ).toBe("Opus 5.5 · claude-agent");
   });
 
   it("falls back to raw ids for a model or level the catalog no longer lists", () => {
     expect(
       formatTurnModelLabel(
-        { provider: "opencode", modelId: "gone/model-x", thinkingOptionId: "xhigh" },
+        {
+          provider: "opencode",
+          modelId: "gone/model-x",
+          thinkingOptionId: "xhigh",
+        },
         entries,
       ),
     ).toBe("gone/model-x · xhigh");
     expect(
       formatTurnModelLabel(
-        { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "xhigh" },
+        {
+          provider: "opencode",
+          modelId: "claude-agent/opus",
+          thinkingOptionId: "xhigh",
+        },
         entries,
       ),
-    ).toBe("Opus 5.5 · xhigh");
+    ).toBe("Opus 5.5 · claude-agent · xhigh");
   });
 
   it("uses raw ids while the catalog is still loading or the provider is unknown", () => {
-    const model = { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "high" };
+    const model = {
+      provider: "opencode",
+      modelId: "claude-agent/opus",
+      thinkingOptionId: "high",
+    };
     expect(formatTurnModelLabel(model, undefined)).toBe("claude-agent/opus · high");
     expect(formatTurnModelLabel({ ...model, provider: "other" }, entries)).toBe(
       "claude-agent/opus · high",
@@ -91,7 +151,11 @@ describe("formatTurnModelLabel", () => {
 });
 
 describe("resolveTurnModelLabel", () => {
-  const model = { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "high" };
+  const model = {
+    provider: "opencode",
+    modelId: "claude-agent/opus",
+    thinkingOptionId: "high",
+  };
 
   it("shows nothing when the setting is off", () => {
     expect(resolveTurnModelLabel({ enabled: false, model, entries })).toBeNull();
@@ -102,6 +166,8 @@ describe("resolveTurnModelLabel", () => {
   });
 
   it("labels a stamped turn when the setting is on", () => {
-    expect(resolveTurnModelLabel({ enabled: true, model, entries })).toBe("Opus 5.5 · High");
+    expect(resolveTurnModelLabel({ enabled: true, model, entries })).toBe(
+      "Opus 5.5 · claude-agent · High",
+    );
   });
 });

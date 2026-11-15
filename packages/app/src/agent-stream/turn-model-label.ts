@@ -3,6 +3,7 @@ import type {
   AssistantMessageModel,
   ProviderSnapshotEntry,
 } from "@getpaseo/protocol/agent-types";
+import { getModelRoute } from "@/provider-selection/model-route-groups";
 
 const LABEL_SEPARATOR = " · ";
 
@@ -17,8 +18,19 @@ function findModelDefinition(
 }
 
 /**
+ * Whether a display name already says which route serves it. Custom names that carry their own
+ * route use the picker's " · " convention (`DS V4.1 Flash · Direct`); adding the id's route
+ * again would only repeat it.
+ */
+function nameCarriesRoute(name: string): boolean {
+  return name.includes(LABEL_SEPARATOR);
+}
+
+/**
  * The footer label for the model that answered a turn: the picker's display name (which carries
- * the user's custom names) plus the thinking level. A model or option the catalog no longer
+ * the user's custom names), the route for `route/model` ids so the same model on two routes reads
+ * differently (`Opus 5.5 · claude-agent` vs `Claude Opus 5.5 · vercel-brandon-pro`), and the
+ * thinking level. Names that already carry a route are left as they are. A model or option the catalog no longer
  * lists falls back to its raw id, so an old turn still says something true.
  */
 export function formatTurnModelLabel(
@@ -27,7 +39,12 @@ export function formatTurnModelLabel(
 ): string {
   const entry = entries?.find((candidate) => candidate.provider === model.provider);
   const definition = findModelDefinition(entry?.models, model.modelId);
-  const parts = [definition?.label.trim() || model.modelId];
+  const name = definition?.label.trim();
+  const parts = [name || model.modelId];
+  const route = name ? getModelRoute(model.modelId) : null;
+  if (route && name && !nameCarriesRoute(name)) {
+    parts.push(route);
+  }
   const thinkingOptionId = model.thinkingOptionId;
   if (thinkingOptionId) {
     const option = definition?.thinkingOptions?.find(
