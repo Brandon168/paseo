@@ -28,6 +28,7 @@ interface AgentInspect {
     InputTokens: number;
     OutputTokens: number;
     CachedTokens: number;
+    CacheWriteTokens?: number;
     CostUsd: number;
   } | null;
   Capabilities: {
@@ -111,6 +112,9 @@ function buildLastUsage(snapshot: AgentSnapshotPayload): AgentInspect["LastUsage
     InputTokens: snapshot.lastUsage.inputTokens ?? 0,
     OutputTokens: snapshot.lastUsage.outputTokens ?? 0,
     CachedTokens: snapshot.lastUsage.cachedInputTokens ?? 0,
+    ...(snapshot.lastUsage.cacheWriteTokens === undefined
+      ? {}
+      : { CacheWriteTokens: snapshot.lastUsage.cacheWriteTokens }),
     CostUsd: snapshot.lastUsage.totalCostUsd ?? 0,
   };
 }
@@ -174,7 +178,7 @@ function toInspectRows(agent: AgentInspect): InspectRow[] {
   if (agent.LastUsage) {
     rows.push({
       key: "LastUsage",
-      value: `InputTokens: ${agent.LastUsage.InputTokens}, OutputTokens: ${agent.LastUsage.OutputTokens}, CachedTokens: ${agent.LastUsage.CachedTokens}, CostUsd: ${formatCost(agent.LastUsage.CostUsd)}`,
+      value: `InputTokens: ${agent.LastUsage.InputTokens}, OutputTokens: ${agent.LastUsage.OutputTokens}, CachedTokens: ${agent.LastUsage.CachedTokens}${agent.LastUsage.CacheWriteTokens === undefined ? "" : `, CacheWriteTokens: ${agent.LastUsage.CacheWriteTokens}`}, CostUsd: ${formatCost(agent.LastUsage.CostUsd)}`,
     });
   }
 

@@ -302,6 +302,7 @@ function buildAgentStateSelector(serverId: string, agentId: string) {
       contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
       contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
       totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
+      lastUsage: agent?.lastUsage ?? null,
       model: agent?.model ?? null,
     };
   };
@@ -2266,6 +2267,7 @@ function ComposerContentImpl({
             maxTokens={agentState.contextWindowMaxTokens}
             usedTokens={agentState.contextWindowUsedTokens}
             totalCostUsd={agentState.totalCostUsd}
+            usage={agentState.lastUsage}
             toolbarRing={TOOLBAR_RINGS[controlSizing]}
           />
         </View>
@@ -2277,6 +2279,7 @@ function ComposerContentImpl({
       agentState.contextWindowMaxTokens,
       agentState.contextWindowUsedTokens,
       agentState.totalCostUsd,
+      agentState.lastUsage,
       controlSizing,
     ],
   );

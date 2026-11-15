@@ -2206,6 +2206,17 @@ export const ptBR: TranslationResources = {
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Custo da sessão {{cost}}",
     accessibility: "Janela de contexto {{percentage}}% usada",
+    cacheTitle: "Cache",
+    cacheLastCall: "Última chamada: {{rate}}% em cache",
+    cacheMiss: "A última chamada perdeu o cache ({{rate}}% em cache)",
+    cacheSession: "Sessão: {{rate}}% em cache",
+    tokensTitle: "Tokens da sessão",
+    tokenCacheRead: "Leitura de cache",
+    tokenCacheWrite: "Gravação de cache",
+    tokenInput: "Entrada sem cache",
+    tokenOutput: "Saída",
+    tokenReasoning: "Raciocínio",
+    includedInPlan: "Incluído no plano",
   },
   review: {
     feedback: {

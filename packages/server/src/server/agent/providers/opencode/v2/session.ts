@@ -41,6 +41,7 @@ import { commands } from "./commands.js";
 import { messages } from "./history.js";
 import { SessionPermissions } from "./permissions.js";
 import { SessionUsage } from "./usage.js";
+import { randomUUID } from "node:crypto";
 
 export class OpenCodeV2Session implements AgentSession {
   readonly provider = "opencode";
@@ -64,6 +65,7 @@ export class OpenCodeV2Session implements AgentSession {
   private history: SessionMessageInfo[] = [];
   private readonly background: OpenCodeBackgroundInventory;
   private modes: AgentMode[] = [];
+  private readonly usageSessionKey = randomUUID();
   constructor(
     private connection: V2Connection,
     private info: SessionInfo,
@@ -75,6 +77,7 @@ export class OpenCodeV2Session implements AgentSession {
     bindChild?: (id: string) => void,
     private readonly acquire?: () => Promise<V2Connection>,
     private readonly moved?: (connection: V2Connection) => void,
+    private readonly usageEnv: Record<string, string> = {},
   ) {
     this.background = new OpenCodeBackgroundInventory({
       id: info.id,
@@ -137,6 +140,21 @@ export class OpenCodeV2Session implements AgentSession {
   }
   get id() {
     return this.info.id;
+  }
+  /**
+   * Which account the model bills against: the model route is OpenCode's `<providerID>/<modelID>`
+   * and the environment is what the OpenCode server runs with, so usage sources find the login
+   * that route reads.
+   */
+  usageSession() {
+    if (this.closed) return null;
+    const model = this.info.model;
+    return {
+      provider: "opencode",
+      model: model ? `${model.providerID}/${model.id}` : this.config.model,
+      env: this.usageEnv,
+      sessionKey: this.usageSessionKey,
+    };
   }
   get controls() {
     return controls;

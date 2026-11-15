@@ -2207,6 +2207,17 @@ export const ru: TranslationResources = {
     tokens: "Токены: {{used}} / {{max}}",
     sessionCost: "Стоимость сессии: {{cost}}",
     accessibility: "Использовано {{percentage}}% контекстного окна",
+    cacheTitle: "Кэш",
+    cacheLastCall: "Последний вызов: {{rate}}% из кэша",
+    cacheMiss: "Последний вызов не попал в кэш ({{rate}}% из кэша)",
+    cacheSession: "Сессия: {{rate}}% из кэша",
+    tokensTitle: "Токены сессии",
+    tokenCacheRead: "Чтение из кэша",
+    tokenCacheWrite: "Запись в кэш",
+    tokenInput: "Входные токены без кэша",
+    tokenOutput: "Вывод",
+    tokenReasoning: "Рассуждение",
+    includedInPlan: "Входит в тариф",
   },
   review: {
     feedback: {

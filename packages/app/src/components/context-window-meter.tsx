@@ -13,6 +13,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
+import type { AgentUsage } from "@getpaseo/protocol/agent-types";
 import { useHostReportsUsage } from "@/usage";
 import type { Theme } from "@/styles/theme";
 import { TOOLBAR_DISC_SIZE, type ToolbarRing } from "@/components/ui/control-geometry";
@@ -26,6 +27,8 @@ interface ContextWindowMeterProps {
   maxTokens: number | null;
   usedTokens: number | null;
   totalCostUsd?: number | null;
+  /** The agent's last reported usage, for the cache and token figures in its details. */
+  usage?: AgentUsage | null;
   showPercentage?: boolean;
   /** The ring's box and stroke when it sits in an icon toolbar. */
   toolbarRing?: ToolbarRing;
@@ -156,6 +159,7 @@ export function ContextWindowMeter({
   maxTokens,
   usedTokens,
   totalCostUsd,
+  usage,
   showPercentage = false,
   toolbarRing,
 }: ContextWindowMeterProps) {
@@ -232,6 +236,7 @@ export function ContextWindowMeter({
             agentId={agentId}
             context={context}
             sessionCost={formattedSessionCost}
+            usage={usage}
             showTitle={false}
             refreshable
           />
@@ -273,6 +278,7 @@ export function ContextWindowMeter({
             agentId={agentId}
             context={context}
             sessionCost={formattedSessionCost}
+            usage={usage}
             showTitle
             refreshable={false}
           />
@@ -307,6 +313,7 @@ export function ContextWindowMeter({
           agentId={agentId}
           context={context}
           sessionCost={formattedSessionCost}
+          usage={usage}
           showTitle
           refreshable
         />

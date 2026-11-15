@@ -518,6 +518,11 @@ const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
   totalCostUsd: z.number().optional(),
   contextWindowMaxTokens: z.number().optional(),
   contextWindowUsedTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
+  reasoningTokens: z.number().optional(),
+  lastCallInputTokens: z.number().optional(),
+  lastCallCachedInputTokens: z.number().optional(),
+  lastCallCacheWriteTokens: z.number().optional(),
 });
 
 const AgentPermissionUpdateSchema = z.record(z.string(), z.unknown());

@@ -2183,6 +2183,17 @@ export const ko: TranslationResources = {
     tokens: "{{used}} / {{max}} 토큰",
     sessionCost: "세션 비용 {{cost}}",
     accessibility: "컨텍스트 윈도우 {{percentage}}% 사용됨",
+    cacheTitle: "캐시",
+    cacheLastCall: "마지막 호출 캐시 적중 {{rate}}%",
+    cacheMiss: "마지막 호출에서 캐시 미스 (적중 {{rate}}%)",
+    cacheSession: "세션 캐시 적중 {{rate}}%",
+    tokensTitle: "세션 토큰",
+    tokenCacheRead: "캐시 읽기",
+    tokenCacheWrite: "캐시 쓰기",
+    tokenInput: "캐시되지 않은 입력",
+    tokenOutput: "출력",
+    tokenReasoning: "추론",
+    includedInPlan: "요금제에 포함됨",
   },
   review: {
     feedback: {

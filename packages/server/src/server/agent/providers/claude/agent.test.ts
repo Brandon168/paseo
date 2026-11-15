@@ -3534,6 +3534,9 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        lastCallInputTokens: 100,
+        lastCallCachedInputTokens: 30,
+        lastCallCacheWriteTokens: 20,
       });
     } finally {
       await session.close();
@@ -3575,6 +3578,9 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        lastCallInputTokens: 100,
+        lastCallCachedInputTokens: 30,
+        lastCallCacheWriteTokens: 20,
       });
     } finally {
       await session.close();
@@ -3690,6 +3696,9 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 17_261,
+        lastCallInputTokens: 1,
+        lastCallCachedInputTokens: 16_999,
+        lastCallCacheWriteTokens: 253,
       });
     } finally {
       await session.close();
@@ -3773,6 +3782,9 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        lastCallInputTokens: 100,
+        lastCallCachedInputTokens: 30,
+        lastCallCacheWriteTokens: 20,
       });
       expect(secondTurn.usage).toEqual({
         inputTokens: 1_000,
@@ -3801,6 +3813,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 150,
+            lastCallInputTokens: 100,
+            lastCallCachedInputTokens: 30,
+            lastCallCacheWriteTokens: 20,
           },
         }),
       );
@@ -3825,6 +3840,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 150,
+            lastCallInputTokens: 100,
+            lastCallCachedInputTokens: 30,
+            lastCallCacheWriteTokens: 20,
           },
         }),
       );
@@ -3855,6 +3873,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 1_000_000,
             contextWindowUsedTokens: 150,
+            lastCallInputTokens: 100,
+            lastCallCachedInputTokens: 30,
+            lastCallCacheWriteTokens: 20,
           },
         }),
       );
@@ -3883,6 +3904,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 175,
+            lastCallInputTokens: 100,
+            lastCallCachedInputTokens: 30,
+            lastCallCacheWriteTokens: 20,
           },
         }),
       );
@@ -3926,6 +3950,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 20_300,
+            lastCallInputTokens: 20_236,
+            lastCallCachedInputTokens: 0,
+            lastCallCacheWriteTokens: 0,
           },
         }),
       );
@@ -3968,6 +3995,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 1_069,
+            lastCallInputTokens: 5,
+            lastCallCachedInputTokens: 1_000,
+            lastCallCacheWriteTokens: 0,
           },
         }),
       );
@@ -4032,6 +4062,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 55,
+            lastCallInputTokens: 40,
+            lastCallCachedInputTokens: 10,
+            lastCallCacheWriteTokens: 5,
           },
         }),
       );
@@ -4042,6 +4075,9 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 62,
+            lastCallInputTokens: 40,
+            lastCallCachedInputTokens: 10,
+            lastCallCacheWriteTokens: 5,
           },
         }),
       );

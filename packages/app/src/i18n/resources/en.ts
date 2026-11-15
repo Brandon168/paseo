@@ -2198,6 +2198,17 @@ export const en = {
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Session cost {{cost}}",
     accessibility: "Context window {{percentage}}% used",
+    cacheTitle: "Cache",
+    cacheLastCall: "Last call {{rate}}% cached",
+    cacheMiss: "Last call missed the cache ({{rate}}% cached)",
+    cacheSession: "Session {{rate}}% cached",
+    tokensTitle: "Session tokens",
+    tokenCacheRead: "Cache read",
+    tokenCacheWrite: "Cache write",
+    tokenInput: "Uncached input",
+    tokenOutput: "Output",
+    tokenReasoning: "Reasoning",
+    includedInPlan: "Included in plan",
   },
   review: {
     feedback: {

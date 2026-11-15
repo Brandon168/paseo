@@ -2149,6 +2149,17 @@ export const zhCN: TranslationResources = {
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "会话费用 {{cost}}",
     accessibility: "上下文窗口已使用 {{percentage}}%",
+    cacheTitle: "缓存",
+    cacheLastCall: "上次调用缓存命中 {{rate}}%",
+    cacheMiss: "上次调用未命中缓存（命中 {{rate}}%）",
+    cacheSession: "会话缓存命中 {{rate}}%",
+    tokensTitle: "会话 tokens",
+    tokenCacheRead: "缓存读取",
+    tokenCacheWrite: "缓存写入",
+    tokenInput: "未缓存输入",
+    tokenOutput: "输出",
+    tokenReasoning: "推理",
+    includedInPlan: "已包含在套餐中",
   },
   review: {
     feedback: {

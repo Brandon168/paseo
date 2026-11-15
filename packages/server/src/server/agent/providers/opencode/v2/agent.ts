@@ -216,6 +216,10 @@ export class OpenCodeV2AgentClient implements AgentClient {
       bindChild,
       acquire,
       moved,
+      createProviderEnv({
+        runtimeSettings: this.options.settings,
+        overlays: launch?.env ? [launch.env] : [],
+      }),
     );
     try {
       await session.initialize(

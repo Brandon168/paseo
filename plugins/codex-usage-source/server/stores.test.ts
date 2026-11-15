@@ -260,3 +260,47 @@ test("OMP fetch re-reads its row after rotation and skips a newly disabled login
     ),
   ).rejects.toThrow("login store no longer exists");
 });
+
+async function openCodeDatabase(path: string, rows: [string, number, string][]) {
+  await mkdir((await import("node:path")).dirname(path), { recursive: true });
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(path);
+  db.exec(
+    "CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, label TEXT NOT NULL, value TEXT NOT NULL, active INTEGER, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL)",
+  );
+  const insert = db.prepare(
+    "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES (?, ?, 'login', ?, ?, 1, ?)",
+  );
+  rows.forEach(([integration, active, value], index) =>
+    insert.run(`cred-${index}`, integration, value, active, index),
+  );
+  db.close();
+}
+
+test("an OpenCode v2 session finds its OpenAI login in opencode.db when auth.json is gone", async () => {
+  const data = join(home, "data");
+  const oauth = (access: string, accountID: string) =>
+    JSON.stringify({ type: "oauth", access, refresh: "r", expires: 9, metadata: { accountID } });
+  await openCodeDatabase(join(data, "opencode", "opencode.db"), [
+    ["openai", 0, oauth("fixture-inactive", "inactive")],
+    ["openai", 1, oauth("fixture-active", "active-account")],
+    ["deepseek", 1, JSON.stringify({ type: "api", key: "fixture-key" })],
+  ]);
+  const scope = {
+    kind: "session" as const,
+    provider: "opencode",
+    model: "openai/gpt-6.1-sol",
+    env: { XDG_DATA_HOME: data },
+  };
+  const accounts = await discover(scope, lookup(scope.env));
+  expect(accounts.map((account) => account.harness)).toEqual(["OpenCode"]);
+  expect(accounts[0]?.key).toBe("active-account");
+  const route = {
+    store: "opencode" as const,
+    path: join(data, "opencode", "auth.json"),
+  };
+  expect(accounts[0]?.input).toEqual({ route });
+  expect(await discover({ ...scope, model: "deepseek/deepseek-chat" }, lookup(scope.env))).toEqual(
+    [],
+  );
+});

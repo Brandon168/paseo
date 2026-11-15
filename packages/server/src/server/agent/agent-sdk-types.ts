@@ -221,12 +221,19 @@ export interface SteerActiveTurnOptions extends AgentSteerOptions {
 }
 
 export interface AgentUsage {
+  /** Uncached input tokens: they exclude `cachedInputTokens` and `cacheWriteTokens`. */
   inputTokens?: number;
   cachedInputTokens?: number;
   outputTokens?: number;
   totalCostUsd?: number;
   contextWindowMaxTokens?: number;
   contextWindowUsedTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** The most recent model call alone, as opposed to the running totals above. */
+  lastCallInputTokens?: number;
+  lastCallCachedInputTokens?: number;
+  lastCallCacheWriteTokens?: number;
 }
 
 export const TOOL_CALL_ICON_NAMES = [

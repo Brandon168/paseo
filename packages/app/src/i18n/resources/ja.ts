@@ -2194,6 +2194,17 @@ export const ja: TranslationResources = {
     tokens: "{{used}} / {{max}}トークン",
     sessionCost: "セッションコスト: {{cost}}",
     accessibility: "コンテキストウィンドウ{{percentage}}%使用",
+    cacheTitle: "キャッシュ",
+    cacheLastCall: "直前の呼び出し: {{rate}}%キャッシュ済み",
+    cacheMiss: "直前の呼び出しでキャッシュミス（{{rate}}%キャッシュ済み）",
+    cacheSession: "セッション: {{rate}}%キャッシュ済み",
+    tokensTitle: "セッションのトークン",
+    tokenCacheRead: "キャッシュ読み取り",
+    tokenCacheWrite: "キャッシュ書き込み",
+    tokenInput: "キャッシュなし入力",
+    tokenOutput: "出力",
+    tokenReasoning: "推論",
+    includedInPlan: "プランに含まれています",
   },
   review: {
     feedback: {

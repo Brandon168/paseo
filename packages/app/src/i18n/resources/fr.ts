@@ -2222,6 +2222,17 @@ export const fr: TranslationResources = {
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Coût de la session : {{cost}}",
     accessibility: "Fenêtre de contexte : {{percentage}} % utilisés",
+    cacheTitle: "Cache",
+    cacheLastCall: "Dernier appel : {{rate}} % en cache",
+    cacheMiss: "Le dernier appel a manqué le cache ({{rate}} % en cache)",
+    cacheSession: "Session : {{rate}} % en cache",
+    tokensTitle: "Tokens de la session",
+    tokenCacheRead: "Lecture du cache",
+    tokenCacheWrite: "Écriture du cache",
+    tokenInput: "Entrée hors cache",
+    tokenOutput: "Sortie",
+    tokenReasoning: "Raisonnement",
+    includedInPlan: "Inclus dans l’abonnement",
   },
   review: {
     feedback: {

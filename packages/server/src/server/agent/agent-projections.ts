@@ -602,6 +602,11 @@ function sanitizeUsage(value: unknown): AgentUsage | undefined {
     "totalCostUsd",
     "contextWindowMaxTokens",
     "contextWindowUsedTokens",
+    "cacheWriteTokens",
+    "reasoningTokens",
+    "lastCallInputTokens",
+    "lastCallCachedInputTokens",
+    "lastCallCacheWriteTokens",
   ];
   for (const field of fields) {
     if (!assignFiniteNumber(sanitized, result, field)) {

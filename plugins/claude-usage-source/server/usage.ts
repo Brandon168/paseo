@@ -380,9 +380,13 @@ export async function discover(
   for (const input of candidates) {
     const credentials = await resolveClaudeCredentials(input, lookup);
     if (!credentials) continue;
-    const harness = { pi: "Pi", omp: "OMP", claude: "Claude", keychain: "Claude" }[
-      input.route.store
-    ];
+    const harness = {
+      pi: "Pi",
+      omp: "OMP",
+      claude: "Claude",
+      keychain: "Claude",
+      opencode: "OpenCode",
+    }[input.route.store];
     const fallback = { key: hashAccountKey(JSON.stringify(input.route)), harness, input };
     if (credentials.expires !== undefined && credentials.expires <= (lookup.now ?? Date.now)()) {
       accounts.push(fallback);
@@ -437,19 +441,52 @@ async function sessionRoutes(
   scope: Extract<UsageScope, { kind: "session" }>,
   lookup: ClaudeCredentialLookup,
 ): Promise<UsageInput[]> {
-  if (scope.provider === "claude") {
-    const env = scope.env;
-    const foreign =
-      env.ANTHROPIC_BASE_URL &&
-      env.ANTHROPIC_BASE_URL.replace(/\/+$/, "") !== "https://api.anthropic.com";
-    if (enabled(env.CLAUDE_CODE_USE_BEDROCK) || enabled(env.CLAUDE_CODE_USE_VERTEX) || foreign)
-      return [];
-    return [await claudeRoute(lookup)];
-  }
+  if (scope.provider === "claude") return claudeLoginRoutes(scope.env, lookup);
+  if (scope.provider === "opencode") return openCodeRoutes(scope, lookup);
   if (!scope.model?.startsWith("anthropic/")) return [];
   if (scope.provider === "pi") return [{ route: { store: "pi", path: piAuthPath(lookup) } }];
   if (scope.provider === "omp") return discoverOmp(lookup).map((route) => ({ route }));
   return [];
+}
+
+/** The Claude login a Claude Code process reads, unless its environment points elsewhere. */
+async function claudeLoginRoutes(
+  env: Record<string, string>,
+  lookup: ClaudeCredentialLookup,
+): Promise<UsageInput[]> {
+  const foreign =
+    env.ANTHROPIC_BASE_URL &&
+    env.ANTHROPIC_BASE_URL.replace(/\/+$/, "") !== "https://api.anthropic.com";
+  if (enabled(env.CLAUDE_CODE_USE_BEDROCK) || enabled(env.CLAUDE_CODE_USE_VERTEX) || foreign)
+    return [];
+  return [await claudeRoute(lookup)];
+}
+
+/**
+ * OpenCode routes a model as `<providerID>/<modelID>`. `claude-agent` drives Claude Code with
+ * its own login (the same one the Claude provider uses); `anthropic` and `claude-code` are
+ * OpenCode logins of their own.
+ */
+async function openCodeRoutes(
+  scope: Extract<UsageScope, { kind: "session" }>,
+  lookup: ClaudeCredentialLookup,
+): Promise<UsageInput[]> {
+  const providerId = scope.model?.split("/", 1)[0];
+  if (providerId === "claude-agent") return claudeLoginRoutes(scope.env, lookup);
+  if (providerId !== "anthropic" && providerId !== "claude-code") return [];
+  return [
+    {
+      route: {
+        store: "opencode",
+        path: join(
+          scope.env.XDG_DATA_HOME || join(lookup.home ?? homedir(), ".local", "share"),
+          "opencode",
+          "auth.json",
+        ),
+        integration: providerId,
+      },
+    },
+  ];
 }
 
 function enabled(value: string | undefined): boolean {

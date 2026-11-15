@@ -37,6 +37,9 @@ export class SessionUsage {
       usage: {
         ...usageFromV2(this.options.info()),
         contextWindowUsedTokens: contextWindowUsedTokens(tokens),
+        lastCallInputTokens: tokens.input,
+        lastCallCachedInputTokens: tokens.cache.read,
+        lastCallCacheWriteTokens: tokens.cache.write,
         ...(contextWindowMaxTokens === undefined ? {} : { contextWindowMaxTokens }),
       },
     });

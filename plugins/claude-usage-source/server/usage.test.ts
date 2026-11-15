@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1133,4 +1133,82 @@ it("session Keychain input retains the selected config-directory locator through
     env: { CLAUDE_CONFIG_DIR: "/somewhere-else" },
   });
   expect(reads).toEqual(Array(3).fill(`${service}:fixture-user`));
+});
+
+describe("OpenCode sessions", () => {
+  const profile: typeof fetch = async () =>
+    jsonResponse({
+      account: { uuid: "account", email: "me@example.test" },
+      organization: { uuid: "org" },
+    });
+  const lookup = { platform: "linux" as const, home: "/unused-default-home", env: {} };
+  let home: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "claude-opencode-scope-"));
+  });
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+  const scope = (model: string | undefined, env: Record<string, string>) => ({
+    kind: "session" as const,
+    provider: "opencode",
+    model,
+    env,
+  });
+
+  it("resolves claude-agent routes to the Claude Code login, like the Claude provider", async () => {
+    writeClaudeCredentials(home, "opencode-claude-agent-token");
+    const env = { HOME: home, CLAUDE_CONFIG_DIR: home };
+    for (const model of ["claude-agent/opus", "claude-agent/sonnet"]) {
+      expect(await discover(scope(model, env), lookup, profile)).toEqual([
+        {
+          key: "account.org",
+          label: "me@example.test",
+          harness: "Claude",
+          input: credentialInput(home),
+        },
+      ]);
+    }
+    expect(await discover(scope("openai/gpt-6.1-sol", env), lookup, profile)).toEqual([]);
+    expect(await discover(scope(undefined, env), lookup, profile)).toEqual([]);
+    expect(
+      await discover(
+        scope("claude-agent/opus", { ...env, ANTHROPIC_BASE_URL: "https://other.test" }),
+        lookup,
+        profile,
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads anthropic and claude-code logins from OpenCode's auth.json and opencode.db", async () => {
+    const data = join(home, "data", "opencode");
+    mkdirSync(data, { recursive: true });
+    writeFileSync(
+      join(data, "auth.json"),
+      JSON.stringify({ anthropic: { type: "oauth", access: "fixture-anthropic", expires: 9 } }),
+    );
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(join(data, "opencode.db"));
+    db.exec(
+      "CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, label TEXT NOT NULL, value TEXT NOT NULL, active INTEGER, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL)",
+    );
+    db.prepare(
+      "INSERT INTO credential VALUES ('c1', 'claude-code', 'Claude Code', ?, 1, 1, 1)",
+    ).run(JSON.stringify({ type: "oauth", access: "fixture-claude-code", expires: 9 }));
+    db.close();
+    const env = { HOME: home, XDG_DATA_HOME: join(home, "data") };
+    const route = (integration: string) => ({
+      route: { store: "opencode", path: join(data, "auth.json"), integration },
+    });
+    const anthropic = await discover(scope("anthropic/claude-opus-4", env), lookup, profile);
+    expect(anthropic.map((account) => [account.harness, account.input])).toEqual([
+      ["OpenCode", route("anthropic")],
+    ]);
+    const claudeCode = await discover(scope("claude-code/opus", env), lookup, profile);
+    expect(claudeCode.map((account) => account.input)).toEqual([route("claude-code")]);
+    expect(inputSchema.parse(route("claude-code"))).toEqual(route("claude-code"));
+    expect(await discover(scope("vercel-brandon-pro/anthropic/x", env), lookup, profile)).toEqual(
+      [],
+    );
+  });
 });

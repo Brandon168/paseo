@@ -1,6 +1,6 @@
-import type { AgentInfo, ModelInfo } from "@opencode/client";
+import type { AgentInfo, ModelInfo, SessionInfo } from "@opencode/client";
 import { expect, test } from "vitest";
-import { modelsFromV2, modesFromV2 } from "./mapping.js";
+import { modelsFromV2, modesFromV2, usageFromV2 } from "./mapping.js";
 
 test("normalizes v2 model capabilities, variants, and visible primary modes", () => {
   const model: ModelInfo = {
@@ -47,4 +47,24 @@ test("normalizes v2 model capabilities, variants, and visible primary modes", ()
       { ...agent, id: "child", mode: "subagent" },
     ]),
   ).toEqual([{ id: "build", label: "Build", description: undefined }]);
+});
+
+test("usageFromV2 keeps cache writes and reasoning so a cache hit rate has its whole denominator", () => {
+  const session = {
+    tokens: {
+      input: 56,
+      output: 9_000,
+      reasoning: 1_200,
+      cache: { read: 1_760_000, write: 4_000 },
+    },
+    cost: 0,
+  } as SessionInfo;
+  expect(usageFromV2(session)).toEqual({
+    inputTokens: 56,
+    outputTokens: 9_000,
+    cachedInputTokens: 1_760_000,
+    cacheWriteTokens: 4_000,
+    reasoningTokens: 1_200,
+    totalCostUsd: 0,
+  });
 });

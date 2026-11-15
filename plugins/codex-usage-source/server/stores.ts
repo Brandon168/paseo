@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { routeSchema } from "../shared/input.js";
 
@@ -26,6 +26,12 @@ export const oauthSchema = z.object({
 });
 const rowSchema = z.object({ id: z.number().int().positive(), data: z.string() });
 export type Route = z.infer<typeof routeSchema>;
+const openCodeCredentialSchema = z.object({
+  type: z.literal("oauth"),
+  access: z.string().min(1),
+  expires: z.number().optional(),
+  metadata: z.object({ accountID: z.string().optional() }).optional(),
+});
 
 export async function readJson(path: string): Promise<unknown> {
   try {
@@ -109,6 +115,43 @@ function ompRows(path: string, lookup: StoreLookup) {
   }
 }
 
+/**
+ * OpenCode v2 keeps its logins in `opencode.db` next to the legacy `auth.json`. One row per
+ * login; the integration id is the provider id of a model route, such as `openai/gpt-5`.
+ */
+function openCodeDatabaseOauth(authPath: string, integration: string, lookup: StoreLookup) {
+  let db: Database | undefined;
+  try {
+    const sqlite = (lookup.sqlite ?? builtinSqlite)();
+    if (!sqlite) return null;
+    db = new sqlite.DatabaseSync(join(dirname(authPath), "opencode.db"), { readOnly: true });
+    const rows = db
+      .prepare(
+        "SELECT value FROM credential WHERE integration_id = ? AND (active IS NULL OR active != 0) ORDER BY time_updated DESC",
+      )
+      .all(integration);
+    for (const value of rows) {
+      const row = z.object({ value: z.string() }).safeParse(value);
+      if (!row.success) continue;
+      try {
+        const parsed = openCodeCredentialSchema.parse(JSON.parse(row.data.value));
+        return {
+          access: parsed.access,
+          expires: parsed.expires,
+          accountId: parsed.metadata?.accountID,
+        };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
 export function discoverOmp(lookup: StoreLookup): Route[] {
   const path = ompDatabasePath(lookup);
   return ompRows(path, lookup).map(({ id }) => ({ store: "omp", path, credentialId: id }));
@@ -125,7 +168,9 @@ export async function readHarness(
   if (route.store === "omp") return readOmp(route, lookup);
   const provider = route.store === "opencode" ? "openai" : "openai-codex";
   const parsed = z.record(z.string(), z.unknown()).safeParse(await readJson(route.path));
-  if (!parsed.success) return null;
-  const oauth = oauthSchema.extend({ type: z.literal("oauth") }).safeParse(parsed.data[provider]);
-  return oauth.success ? oauth.data : null;
+  const oauth = parsed.success
+    ? oauthSchema.extend({ type: z.literal("oauth") }).safeParse(parsed.data[provider])
+    : null;
+  if (oauth?.success) return oauth.data;
+  return route.store === "opencode" ? openCodeDatabaseOauth(route.path, provider, lookup) : null;
 }

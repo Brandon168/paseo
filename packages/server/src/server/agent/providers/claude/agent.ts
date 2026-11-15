@@ -2234,11 +2234,34 @@ class ClaudeContextUsageState {
       if (usedTokens !== undefined) {
         usage.contextWindowUsedTokens = usedTokens;
       }
+      Object.assign(usage, this.lastCallUsage());
       return usage;
     } finally {
       this.compactedContextWindowUsedTokens = undefined;
       this.completedResultTurns += 1;
     }
+  }
+
+  /** The latest model request alone; the result's own usage sums every request of the turn. */
+  private lastCallUsage(): Pick<
+    AgentUsage,
+    "lastCallInputTokens" | "lastCallCachedInputTokens" | "lastCallCacheWriteTokens"
+  > {
+    const inputUsage = this.streamRequestInputUsage;
+    if (
+      !inputUsage ||
+      inputUsage.inputTokens +
+        inputUsage.cacheReadInputTokens +
+        inputUsage.cacheCreationInputTokens <=
+        0
+    ) {
+      return {};
+    }
+    return {
+      lastCallInputTokens: inputUsage.inputTokens,
+      lastCallCachedInputTokens: inputUsage.cacheReadInputTokens,
+      lastCallCacheWriteTokens: inputUsage.cacheCreationInputTokens,
+    };
   }
 
   private streamUsedTokens(): number | undefined {
@@ -2257,6 +2280,7 @@ class ClaudeContextUsageState {
   private createUsageUpdatedEvent(contextWindowUsedTokens: number): AgentStreamEvent {
     const usage: AgentUsage = {
       contextWindowUsedTokens,
+      ...this.lastCallUsage(),
     };
     if (this.contextWindowMaxTokens !== undefined) {
       usage.contextWindowMaxTokens = this.contextWindowMaxTokens;

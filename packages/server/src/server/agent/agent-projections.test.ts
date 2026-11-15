@@ -292,6 +292,11 @@ describe("toAgentPayload", () => {
       "totalCostUsd",
       "contextWindowMaxTokens",
       "contextWindowUsedTokens",
+      "cacheWriteTokens",
+      "reasoningTokens",
+      "lastCallInputTokens",
+      "lastCallCachedInputTokens",
+      "lastCallCacheWriteTokens",
     ] as const;
 
     for (const field of fields) {
@@ -489,6 +494,21 @@ describe("toAgentPayload", () => {
     expect(
       buildStoredAgentPayload({ ...record, lastError: null }, ["codex"], ownOptionsOnly),
     ).not.toHaveProperty("lastError");
+  });
+
+  it("carries the cache and last-call usage fields", () => {
+    const lastUsage = {
+      inputTokens: 56,
+      cachedInputTokens: 1_760_000,
+      cacheWriteTokens: 4_000,
+      outputTokens: 9_000,
+      reasoningTokens: 1_200,
+      lastCallInputTokens: 3,
+      lastCallCachedInputTokens: 90_000,
+      lastCallCacheWriteTokens: 500,
+    };
+    const payload = toAgentPayload(createManagedAgent({ lastUsage }));
+    expect(payload.lastUsage).toEqual(lastUsage);
   });
 
   it("omits lastUsage when not available", () => {

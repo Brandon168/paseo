@@ -89,10 +89,40 @@ describe("OpenCode v2 context usage", () => {
         inputTokens: 900,
         outputTokens: 90,
         cachedInputTokens: 40,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
         totalCostUsd: 0.5,
         contextWindowUsedTokens: 1_335,
         contextWindowMaxTokens: 200_000,
+        // The last model call alone: what a cache miss would show up in.
+        lastCallInputTokens: 300,
+        lastCallCachedInputTokens: 1_000,
+        lastCallCacheWriteTokens: 20,
       });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("names the model route and server environment for account usage lookups", async () => {
+    const harness = new V2Harness();
+    harness.info.model = { providerID: "claude-agent", id: "opus" };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+      settings: { env: { XDG_DATA_HOME: "/data/opencode-home" } },
+    });
+    const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    try {
+      const scope = session.usageSession?.();
+      expect(scope).toMatchObject({
+        provider: "opencode",
+        model: "claude-agent/opus",
+        env: { XDG_DATA_HOME: "/data/opencode-home" },
+      });
+      expect(session.usageSession?.()?.sessionKey).toBe(scope?.sessionKey);
+      await session.close();
+      expect(session.usageSession?.()).toBeNull();
     } finally {
       await session.close();
     }

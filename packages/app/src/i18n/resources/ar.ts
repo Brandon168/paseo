@@ -2172,6 +2172,17 @@ export const ar: TranslationResources = {
     tokens: "رموز{{used}}/{{max}}",
     sessionCost: "تكلفة الجلسة{{cost}}",
     accessibility: "تم استخدام نافذة السياق{{percentage}}%",
+    cacheTitle: "ذاكرة التخزين المؤقت",
+    cacheLastCall: "آخر استدعاء: {{rate}}% من الذاكرة المؤقتة",
+    cacheMiss: "فاتت الذاكرة المؤقتة في آخر استدعاء ({{rate}}%)",
+    cacheSession: "الجلسة: {{rate}}% من الذاكرة المؤقتة",
+    tokensTitle: "رموز الجلسة",
+    tokenCacheRead: "قراءة من الذاكرة المؤقتة",
+    tokenCacheWrite: "كتابة في الذاكرة المؤقتة",
+    tokenInput: "مدخلات غير مخزنة مؤقتًا",
+    tokenOutput: "المخرجات",
+    tokenReasoning: "الاستدلال",
+    includedInPlan: "مشمول في الخطة",
   },
   review: {
     feedback: {
