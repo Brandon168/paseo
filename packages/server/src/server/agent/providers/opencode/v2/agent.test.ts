@@ -6,6 +6,7 @@ import type { AgentStreamEvent } from "../../../agent-sdk-types.js";
 import { OpenCodeV2AgentClient } from "./agent.js";
 import { V2Harness } from "../test-utils/v2-harness.js";
 import type { V2Api } from "./api.js";
+import { runProviderRefreshWithDeadline } from "../../../provider-refresh-deadline.js";
 
 function terminalEvents(events: AgentStreamEvent[]) {
   return events.filter(
@@ -17,6 +18,145 @@ function terminalEvents(events: AgentStreamEvent[]) {
 }
 
 describe("OpenCode v2 session lifecycle", () => {
+  test("inherits the resolved OpenCode default on every catalog refresh", async () => {
+    const harness = new V2Harness();
+    const createModel = (providerID: string, id: string, name: string): ModelInfo => ({
+      providerID,
+      id,
+      modelID: id,
+      name,
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      variants: [{ id: "high" }],
+      time: { released: 1 },
+      cost: [],
+      status: "active",
+      enabled: true,
+      limit: { context: 1_000_000, output: 128_000 },
+    });
+    const sonnet = createModel("claude-agent", "sonnet", "Sonnet current version");
+    const gateway = createModel("gateway", "anthropic/claude-sonnet", "Gateway Sonnet");
+    let selected: ModelInfo | null = sonnet;
+    harness.api.model.list = async () => ({
+      location: harness.info.location,
+      data: [gateway, sonnet],
+    });
+    harness.api.provider.list = async () => ({
+      location: harness.info.location,
+      data: [
+        { id: "claude-agent", name: "Claude Agent", activation: "enabled", package: "test" },
+        { id: "gateway", name: "Gateway", activation: "enabled", package: "test" },
+      ],
+    });
+    const defaults: unknown[] = [];
+    harness.api.model.default = async (input, request) => {
+      defaults.push({ input, signal: request?.signal });
+      return { location: harness.info.location, data: selected };
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    try {
+      const options = { scope: "workspace" as const, cwd: "/tmp/project", force: true };
+      const first = await client.fetchCatalog(options);
+      expect(
+        first.models.filter((model) => model.isDefault).map((model) => [model.id, model.label]),
+      ).toEqual([["claude-agent/sonnet", "Sonnet current version"]]);
+      selected = gateway;
+      const next = await client.fetchCatalog(options);
+      expect(next.models.filter((model) => model.isDefault).map((model) => model.id)).toEqual([
+        "gateway/anthropic/claude-sonnet",
+      ]);
+      selected = null;
+      expect(
+        (await client.fetchCatalog(options)).models.filter((model) => model.isDefault),
+      ).toEqual([]);
+      selected = { ...sonnet, id: "unavailable", enabled: false };
+      const unavailable = await client.fetchCatalog(options);
+      expect(unavailable.models.map((model) => model.id)).toEqual([
+        "gateway/anthropic/claude-sonnet",
+        "claude-agent/sonnet",
+      ]);
+      expect(unavailable.models.filter((model) => model.isDefault)).toEqual([]);
+      expect(defaults).toEqual(
+        Array.from({ length: 4 }, () => ({
+          input: { location: { directory: "/tmp/project" } },
+          signal: undefined,
+        })),
+      );
+    } finally {
+      await client.shutdown();
+    }
+  });
+
+  test("fails catalog refresh when the default cannot be read instead of choosing another route", async () => {
+    const harness = new V2Harness();
+    harness.api.model.list = async () => ({ location: harness.info.location, data: [] });
+    harness.api.provider.list = async () => ({
+      location: harness.info.location,
+      data: [{ id: "test", name: "Test", activation: "enabled", package: "test" }],
+    });
+    harness.api.model.default = async () => {
+      throw new Error("Default lookup failed");
+    };
+    let releases = 0;
+    harness.connection.release = async () => {
+      releases += 1;
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    await expect(
+      client.fetchCatalog({ scope: "workspace", cwd: "/tmp/project", force: false }),
+    ).rejects.toThrow("Default lookup failed");
+    expect(releases).toBe(1);
+    await client.shutdown();
+  });
+
+  test("the catalog deadline aborts default discovery and releases the connection", async () => {
+    const { vi } = await import("vitest");
+    vi.useFakeTimers();
+    const harness = new V2Harness();
+    harness.api.model.list = async () => ({ location: harness.info.location, data: [] });
+    harness.api.provider.list = async () => ({
+      location: harness.info.location,
+      data: [{ id: "test", name: "Test", activation: "enabled", package: "test" }],
+    });
+    let signal: AbortSignal | undefined;
+    harness.api.model.default = async (_input, request) =>
+      new Promise((_resolve, reject) => {
+        signal = request?.signal;
+        signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+      });
+    let releases = 0;
+    harness.connection.release = async () => {
+      releases += 1;
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    try {
+      const refresh = runProviderRefreshWithDeadline({
+        label: "OpenCode",
+        timeoutMs: 100,
+        operation: (context) =>
+          client.fetchCatalog({ scope: "workspace", cwd: "/tmp/project", force: false }, context),
+      });
+      const rejection = expect(refresh).rejects.toThrow(
+        "Timed out refreshing OpenCode after 100ms; pending: model.default",
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await rejection;
+      expect(signal?.aborted).toBe(true);
+      expect(releases).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      await client.shutdown();
+    }
+  });
+
   test("refreshes the existing location before reading a forced catalog", async () => {
     const harness = new V2Harness();
     const refreshed: string[] = [];
@@ -24,6 +164,7 @@ describe("OpenCode v2 session lifecycle", () => {
       refreshed.push(directory);
     };
     harness.api.model.list = async () => ({ location: harness.info.location, data: [] });
+    harness.api.model.default = async () => ({ location: harness.info.location, data: null });
     harness.api.provider.list = async () => ({
       location: harness.info.location,
       data: [{ id: "test", name: "Test", activation: "enabled", package: "test" }],

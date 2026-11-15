@@ -91,16 +91,23 @@ export class OpenCodeV2AgentClient implements AgentClient {
         await activity("paseo.bridge.refresh", () =>
           connection.refreshLocation(location.directory, request.signal),
         );
-      const [models, agents, providers] = await Promise.all([
+      const [models, agents, providers, defaultModel] = await Promise.all([
         activity("model.list", () => connection.client.model.list({ location }, request)),
         activity("agent.list", () => connection.client.agent.list({ location }, request)),
         activity("provider.list", () => connection.client.provider.list({ location }, request)),
+        activity("model.default", () => connection.client.model.default({ location }, request)),
       ]);
       if (!providers.data.length)
         throw new Error(
           "OpenCode has no connected providers. Authenticate using opencode auth login.",
         );
-      return { models: modelsFromV2(models.data), modes: modesFromV2(agents.data) };
+      const definitions = modelsFromV2(models.data);
+      const defaultId = defaultModel.data
+        ? `${defaultModel.data.providerID}/${defaultModel.data.id}`
+        : undefined;
+      const selected = definitions.find((model) => model.id === defaultId);
+      if (selected) selected.isDefault = true;
+      return { models: definitions, modes: modesFromV2(agents.data) };
     } finally {
       await connection.release();
     }
