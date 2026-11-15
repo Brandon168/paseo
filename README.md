@@ -11,6 +11,8 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
+> **Personal fork.** [FORK.md](FORK.md) lists what differs from upstream here, and which of those changes are open or already merged upstream.
+
 <p align="center">
   <a href="https://github.com/getpaseo/paseo/stargazers">
     <img src="https://img.shields.io/github/stars/getpaseo/paseo?style=flat&logo=github" alt="GitHub stars">
