@@ -700,6 +700,9 @@ function mergePrependedCanonicalTail(olderTail: StreamItem[], currentTail: Strea
     ...currentFirst,
     text: `${olderLast.text}${currentFirst.text}`,
   };
+  if (mergedAssistant.model === undefined && olderLast.model !== undefined) {
+    mergedAssistant.model = olderLast.model;
+  }
   if (mergedAssistant.messageId === undefined && olderLast.messageId !== undefined) {
     mergedAssistant.messageId = olderLast.messageId;
   }
@@ -775,6 +778,7 @@ function replaceLiveAssistantWithProjectedText(params: {
     text: event.item.text,
     timestamp,
     timelineCursor,
+    ...(event.item.model ? { model: event.item.model } : {}),
   };
   return next;
 }
@@ -818,10 +822,12 @@ function reconcileOverlappingProjectedAssistant(params: {
   }
 
   const messageId = projectedMessageId ?? match.current.messageId;
+  const model = unit.event.item.model ?? match.current.model;
   const replacement: AssistantMessageItem = {
     kind: "assistant_message",
     id: match.current.id,
     ...(messageId !== undefined ? { messageId } : {}),
+    ...(model ? { model } : {}),
     text: projectedText,
     timestamp: unit.timestamp,
     timelineCursor: { epoch: params.epoch, seq: unit.seqEnd },

@@ -107,6 +107,8 @@ export interface AppSettings {
   chatOutlineEnabled: boolean;
   /** Model picker: group `route/model` ids (OpenCode routes) under route headings. */
   groupModelsByRoute: boolean;
+  /** Chat: show which model answered under each completed assistant turn. */
+  showModelOnTurns: boolean;
   vimKeybindings: boolean;
   sendShortcut: SendShortcut;
   filePanelAssociations: Record<string, string>;
@@ -165,6 +167,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   chatDisplay: "collapseTurns",
   chatOutlineEnabled: true,
   groupModelsByRoute: false,
+  showModelOnTurns: true,
   vimKeybindings: false,
   sendShortcut: "enter",
   filePanelAssociations: {},
@@ -271,6 +274,7 @@ const StoredAppSettingsSchema = z
     compactToolCalls: z.boolean().optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),
     groupModelsByRoute: z.boolean().catch(false),
+    showModelOnTurns: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
     sendShortcut: z.enum(["enter", "mod-enter"]).catch("enter"),
     filePanelAssociations: z.record(z.string(), z.string()).catch({}),

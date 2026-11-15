@@ -6,7 +6,11 @@ import {
 import type { SessionMessageAssistantTool } from "@opencode/client";
 import { STRUCTURED_OUTPUT_TOOL } from "./structured-output.js";
 import type { SessionMessageInfo } from "@opencode/client";
-import type { AgentStreamEvent, AgentTimelineItem } from "../../../agent-sdk-types.js";
+import type {
+  AgentStreamEvent,
+  AgentTimelineItem,
+  AssistantMessageModel,
+} from "../../../agent-sdk-types.js";
 
 function textPartKey(messageID: string, part: "text" | "reasoning", ordinal: number): string {
   return `${messageID}:${part}:${ordinal}`;
@@ -17,6 +21,19 @@ function textPartKey(messageID: string, part: "text" | "reasoning", ordinal: num
 // the chunk independent; UTF-8 would corrupt a surrogate pair split across chunks.
 function detachedSuffix(text: string, start: number): string {
   return Buffer.from(text.slice(start), "utf16le").toString("utf16le");
+}
+
+// OpenCode records the model and variant on every assistant message, so replayed history keeps
+// the model that actually answered. The ids match the catalog: `providerID/id` and the variant.
+function answeringModel(message: Extract<SessionMessageInfo, { type: "assistant" }>) {
+  const model = message.model;
+  if (!model) return undefined;
+  const answered: AssistantMessageModel = {
+    provider: "opencode",
+    modelId: `${model.providerID}/${model.id}`,
+    thinkingOptionId: model.variant ?? null,
+  };
+  return answered;
 }
 
 // Text and reasoning each number parts from zero, independent of snapshot position.
@@ -113,12 +130,13 @@ export class V2Timeline {
     // paths address the same cursor entry.
     let textOrdinal = 0;
     let reasoningOrdinal = 0;
+    const model = answeringModel(message);
     for (const [partIndex, part] of message.content.entries()) {
       if (part.type === "tool" && part.name === STRUCTURED_OUTPUT_TOOL) {
-        this.structuredOutputPart(message.id, partIndex, part, state, push);
+        this.structuredOutputPart(message.id, partIndex, part, state, push, model);
       } else if (part.type === "text" || part.type === "reasoning") {
         const ordinal = part.type === "text" ? textOrdinal++ : reasoningOrdinal++;
-        this.textPart(message.id, part, ordinal, state, push);
+        this.textPart(message.id, part, ordinal, state, push, model);
       } else {
         await this.toolPart(message.id, partIndex, part, push);
       }
@@ -134,6 +152,7 @@ export class V2Timeline {
     >,
     state: TimelineState,
     push: (item: AgentTimelineItem) => void,
+    model?: AssistantMessageModel,
   ) {
     if (!state.structured || state.accepted || part.state.status !== "completed") return;
     const value = part.state.metadata?.paseoStructuredOutput;
@@ -143,7 +162,7 @@ export class V2Timeline {
     const text = JSON.stringify(value);
     if (this.content.get(key) === text) return;
     this.content.set(key, text);
-    push({ type: "assistant_message", text, messageId: messageID });
+    push({ type: "assistant_message", text, messageId: messageID, ...(model ? { model } : {}) });
   }
 
   private textPart(
@@ -155,6 +174,7 @@ export class V2Timeline {
     ordinal: number,
     state: TimelineState,
     push: (item: AgentTimelineItem) => void,
+    model?: AssistantMessageModel,
   ) {
     if (state.structured && part.type === "text") return;
     const key = textPartKey(messageID, part.type, ordinal);
@@ -166,7 +186,12 @@ export class V2Timeline {
     this.content.set(key, part.text);
     const suffix = detachedSuffix(part.text, previous.length);
     if (part.type === "text")
-      push({ type: "assistant_message", text: suffix, messageId: messageID });
+      push({
+        type: "assistant_message",
+        text: suffix,
+        messageId: messageID,
+        ...(model ? { model } : {}),
+      });
     else push({ type: "reasoning", text: suffix });
   }
 

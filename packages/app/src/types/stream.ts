@@ -2,6 +2,7 @@ import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type {
   AgentProvider,
   AgentTimelineItem,
+  AssistantMessageModel,
   JsonValue,
   ToolCallDetail,
 } from "@getpaseo/protocol/agent-types";
@@ -715,6 +716,8 @@ export interface AssistantMessageItem {
   timelineCursor?: TimelinePosition;
   text: string;
   timestamp: Date;
+  /** Model that wrote the message, stamped by the daemon. Absent on turns recorded before it did. */
+  model?: AssistantMessageModel;
   /** Display-only fields, assigned after source-item plugin transforms. */
 }
 
@@ -942,6 +945,22 @@ function appendUserMessage(
   return upsertUserMessage(state, nextItem);
 }
 
+function extendAssistantMessage(
+  message: AssistantMessageItem,
+  chunk: string,
+  timestamp: Date,
+  timelineCursor: TimelinePosition | undefined,
+  model: AssistantMessageModel | undefined,
+): AssistantMessageItem {
+  return {
+    ...message,
+    text: `${message.text}${chunk}`,
+    timestamp,
+    ...(timelineCursor ? { timelineCursor } : {}),
+    ...(model ? { model } : {}),
+  };
+}
+
 function appendAssistantMessage(
   state: StreamItem[],
   text: string,
@@ -950,6 +969,7 @@ function appendAssistantMessage(
   messageId?: string,
   reservedItemIds?: ReadonlySet<string>,
   timelineCursor?: TimelinePosition,
+  model?: AssistantMessageModel,
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
   if (!chunk) {
@@ -962,12 +982,7 @@ function appendAssistantMessage(
     last.kind === "assistant_message" &&
     (messageId === undefined || last.messageId === messageId);
   if (shouldAppendToLast) {
-    const updated: AssistantMessageItem = {
-      ...last,
-      text: `${last.text}${chunk}`,
-      timestamp,
-      ...(timelineCursor ? { timelineCursor } : {}),
-    };
+    const updated = extendAssistantMessage(last, chunk, timestamp, timelineCursor, model);
     return [...state.slice(0, -1), updated];
   }
 
@@ -980,12 +995,7 @@ function appendAssistantMessage(
     secondLast?.kind === "assistant_message" &&
     (messageId === undefined || secondLast.messageId === messageId)
   ) {
-    const updated: AssistantMessageItem = {
-      ...secondLast,
-      text: `${secondLast.text}${chunk}`,
-      timestamp,
-      ...(timelineCursor ? { timelineCursor } : {}),
-    };
+    const updated = extendAssistantMessage(secondLast, chunk, timestamp, timelineCursor, model);
     return [...state.slice(0, -2), updated, last];
   }
 
@@ -1000,6 +1010,7 @@ function appendAssistantMessage(
     id: entryId,
     ...(messageId ? { messageId } : {}),
     ...(timelineCursor ? { timelineCursor } : {}),
+    ...(model ? { model } : {}),
     text: chunk,
     timestamp,
   };
@@ -1556,6 +1567,7 @@ function reduceTimelineEvent(
         item.messageId,
         reservedItemIds,
         timelineCursor,
+        item.model,
       );
     case "reasoning":
       return appendThought(state, item.text, timestamp, timelineCursor, event.turnId);

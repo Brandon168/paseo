@@ -91,6 +91,12 @@ const PluginTimelineDataSchema: z.ZodType<PluginTimelineData> = z.lazy(() =>
   ]),
 );
 
+const AssistantMessageModelSchema = z.strictObject({
+  provider: z.string(),
+  modelId: z.string(),
+  thinkingOptionId: z.string().nullable().optional(),
+});
+
 const TimelineItemBaseShape = {
   id: z.string(),
   timelineCursor: TimelinePositionSchema.optional(),
@@ -127,6 +133,8 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     ...TimelineItemBaseShape,
     kind: z.literal("assistant_message"),
     messageId: z.string().optional(),
+    // Absent on caches written before the daemon stamped the answering model.
+    model: AssistantMessageModelSchema.optional(),
     text: z.string(),
     // Reject old caches containing display fragments; refetch the complete source text.
   }),
@@ -475,6 +483,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         ...(item.messageId ? { messageId: item.messageId } : {}),
+        ...(item.model ? { model: item.model } : {}),
         text: item.text,
       };
     case "thought":
@@ -568,6 +577,7 @@ function deserializeBuiltinTimelineItem(
         ...base,
         kind: item.kind,
         ...(item.messageId ? { messageId: item.messageId } : {}),
+        ...(item.model ? { model: item.model } : {}),
         text: item.text,
       };
     case "thought":

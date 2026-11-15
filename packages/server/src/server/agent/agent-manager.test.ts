@@ -5820,6 +5820,134 @@ test("setAgentThinkingOption adopts the session's effective clamped level", asyn
   expect(persisted?.config?.thinkingOptionId).toBe("high");
 });
 
+test("live assistant messages record the model and thinking level that answered", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-assistant-model-"));
+  let session!: TestAgentSession;
+  class HistorySession extends TestAgentSession {
+    async setThinkingOption(): Promise<void> {}
+  }
+  class Client extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      session = new HistorySession(config);
+      return session;
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new Client() },
+    logger,
+    agentStreamCoalesceWindowMs: 0,
+  });
+  let agentId: string | null = null;
+  try {
+    const agent = await manager.createAgent(
+      { provider: "codex", cwd: workdir, model: "route-a/first", thinkingOptionId: "low" },
+      undefined,
+      { workspaceId: undefined },
+    );
+    agentId = agent.id;
+    const speak = (text: string, messageId: string) =>
+      session.pushEvent({
+        type: "timeline",
+        provider: "codex",
+        item: { type: "assistant_message", text, messageId },
+      });
+
+    speak("one", "m1");
+    await manager.flush();
+    await manager.setAgentModel(agent.id, "route-b/second");
+    await manager.setAgentThinkingOption(agent.id, "high");
+    speak("two", "m2");
+    await manager.flush();
+
+    const assistantRows = manager
+      .fetchTimeline(agent.id, { limit: 0 })
+      .rows.flatMap((row) => (row.item.type === "assistant_message" ? [row.item] : []));
+    expect(assistantRows).toEqual([
+      {
+        type: "assistant_message",
+        text: "one",
+        messageId: "m1",
+        model: { provider: "codex", modelId: "route-a/first", thinkingOptionId: "low" },
+      },
+      {
+        type: "assistant_message",
+        text: "two",
+        messageId: "m2",
+        model: { provider: "codex", modelId: "route-b/second", thinkingOptionId: "high" },
+      },
+    ]);
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("replayed provider history keeps the provider's model and is not stamped with the current one", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-assistant-model-history-"));
+  class HistorySession extends TestAgentSession {
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      yield {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "assistant_message", text: "from history", messageId: "h1" },
+      };
+      yield {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "assistant_message",
+          text: "from history with model",
+          messageId: "h2",
+          model: { provider: "codex", modelId: "route-old/model", thinkingOptionId: "low" },
+        },
+      };
+    }
+  }
+  class Client extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new HistorySession(config);
+    }
+
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      return new HistorySession({ provider: "codex", cwd: config?.cwd ?? workdir });
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new Client() },
+    durableTimelineStore: new RecordingTimelineStore(),
+    logger,
+  });
+  let agentId: string | null = null;
+  try {
+    const agent = await manager.createAgent(
+      { provider: "codex", cwd: workdir, model: "route-a/first" },
+      undefined,
+      { workspaceId: undefined },
+    );
+    agentId = agent.id;
+    await manager.reloadAgentSession(agent.id, undefined, { rehydrateFromDisk: true });
+    await manager.hydrateTimelineFromProvider(agent.id, { broadcast: true });
+    await manager.flush();
+
+    const rows = await manager.getTimelineRows(agent.id);
+    expect(rows.map((row) => row.item)).toEqual([
+      { type: "assistant_message", text: "from history", messageId: "h1" },
+      {
+        type: "assistant_message",
+        text: "from history with model",
+        messageId: "h2",
+        model: { provider: "codex", modelId: "route-old/model", thinkingOptionId: "low" },
+      },
+    ]);
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("setAgentThinkingOption surfaces a failed state read and keeps the previous level", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-thinking-read-failure-"));
   class UnreadableStateSession extends TestAgentSession {
@@ -7814,10 +7942,9 @@ test("applies live autonomous events and preserves usage omitted from completion
     contextWindowMaxTokens: 200_000,
     contextWindowUsedTokens: 175,
   });
-  expect(manager.getTimeline(snapshot.id)).toContainEqual({
-    type: "assistant_message",
-    text: "AUTONOMOUS_PUMP_MESSAGE",
-  });
+  expect(manager.getTimeline(snapshot.id)).toContainEqual(
+    expect.objectContaining({ type: "assistant_message", text: "AUTONOMOUS_PUMP_MESSAGE" }),
+  );
   expect(lifecycleUpdates).toContain("running");
   expect(lifecycleUpdates).toContain("idle");
 });
@@ -8263,10 +8390,9 @@ test("autonomous events arriving during foreground run are processed via subscri
   });
 
   await vi.waitFor(() =>
-    expect(manager.getTimeline(snapshot.id)).toContainEqual({
-      type: "assistant_message",
-      text: "AUTONOMOUS_DURING_FOREGROUND",
-    }),
+    expect(manager.getTimeline(snapshot.id)).toContainEqual(
+      expect.objectContaining({ type: "assistant_message", text: "AUTONOMOUS_DURING_FOREGROUND" }),
+    ),
   );
   const stillForeground = manager.getAgent(snapshot.id);
   expect(stillForeground?.lifecycle).toBe("running");
@@ -8289,10 +8415,9 @@ test("autonomous events arriving during foreground run are processed via subscri
   ).toBe(false);
 
   // Autonomous timeline item should still be recorded in the agent timeline
-  expect(manager.getTimeline(snapshot.id)).toContainEqual({
-    type: "assistant_message",
-    text: "AUTONOMOUS_DURING_FOREGROUND",
-  });
+  expect(manager.getTimeline(snapshot.id)).toContainEqual(
+    expect.objectContaining({ type: "assistant_message", text: "AUTONOMOUS_DURING_FOREGROUND" }),
+  );
 });
 
 test("subscribe error isolation: throwing subscriber does not break event flow", async () => {
@@ -8370,10 +8495,9 @@ test("subscribe error isolation: throwing subscriber does not break event flow",
   expect(receivedEvents).toContain("turn_started");
   expect(receivedEvents).toContain("timeline");
   expect(receivedEvents).toContain("turn_completed");
-  expect(manager.getTimeline(snapshot.id)).toContainEqual({
-    type: "assistant_message",
-    text: "EVENT_AFTER_ERROR",
-  });
+  expect(manager.getTimeline(snapshot.id)).toContainEqual(
+    expect.objectContaining({ type: "assistant_message", text: "EVENT_AFTER_ERROR" }),
+  );
 });
 
 test("keeps updatedAt monotonic when user message and run start happen in the same millisecond", async () => {

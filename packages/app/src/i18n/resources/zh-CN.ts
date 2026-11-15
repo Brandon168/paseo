@@ -2477,6 +2477,10 @@ export const zhCN: TranslationResources = {
         description:
           "在模型选择器中，将每个路由（如 OpenCode 的 deepseek/ 或 vercel-…/）的模型显示在各自的标题下",
       },
+      showModelOnTurns: {
+        label: "在每个回合显示模型",
+        description: "在每条已完成的回复下方显示回答的模型及其思考级别",
+      },
       chatDisplay: {
         label: "聊天显示",
         description: "聊天中显示多少智能体的工作",

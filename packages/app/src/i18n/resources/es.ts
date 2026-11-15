@@ -2560,6 +2560,11 @@ export const es: TranslationResources = {
         description:
           "En el selector de modelos, muestra los modelos de cada ruta (como deepseek/ o vercel-…/ de OpenCode) bajo su propio encabezado",
       },
+      showModelOnTurns: {
+        label: "Mostrar el modelo en cada turno",
+        description:
+          "Bajo cada respuesta terminada, muestra qué modelo respondió y su nivel de razonamiento",
+      },
       chatDisplay: {
         label: "Visualización del chat",
         description: "Cuánto del trabajo del agente muestra el chat",

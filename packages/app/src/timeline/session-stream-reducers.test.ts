@@ -1961,6 +1961,60 @@ describe("processTimelineResponse", () => {
     expect(assistants[0]).toMatchObject({ text: "Hello", messageId: "answer-1" });
   });
 
+  it("keeps the answering model when projected history replaces a live assistant prefix", () => {
+    const model = { provider: "opencode", modelId: "route-a/first", thinkingOptionId: "low" };
+    const result = processTimelineResponse({
+      ...baseTimelineInput,
+      currentHead: [{ ...makeAssistantItem("Hel"), model }],
+      currentCursor: { epoch: "epoch-1", startSeq: 1, endSeq: 2 },
+      payload: {
+        ...baseTimelineInput.payload,
+        epoch: "epoch-1",
+        startCursor: { seq: 3 },
+        endCursor: { seq: 3 },
+        entries: [
+          {
+            ...makeTimelineEntry(2, "Hello", "assistant_message", 3),
+            sourceSeqRanges: [{ startSeq: 2, endSeq: 3 }],
+            item: { type: "assistant_message", text: "Hello", messageId: "answer-1" },
+          },
+        ],
+      },
+    });
+
+    const assistants = [...result.tail, ...result.head].filter(
+      (item) => item.kind === "assistant_message",
+    );
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]).toMatchObject({ text: "Hello", model });
+  });
+
+  it("carries the answering model from a fetched timeline row into the stream", () => {
+    const model = { provider: "opencode", modelId: "deepseek/v4", thinkingOptionId: null };
+    const result = processTimelineResponse({
+      ...baseTimelineInput,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "tail",
+        window: { minSeq: 1, maxSeq: 1, nextSeq: 2 },
+        startCursor: { seq: 1 },
+        endCursor: { seq: 1 },
+        entries: [
+          {
+            ...makeTimelineEntry(1, "Answer", "assistant_message"),
+            item: { type: "assistant_message", text: "Answer", messageId: "answer-1", model },
+          },
+        ],
+      },
+    });
+
+    const assistants = [...result.tail, ...result.head].filter(
+      (item) => item.kind === "assistant_message",
+    );
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]).toMatchObject({ text: "Answer", model });
+  });
+
   it("replaces the whole live assistant message when reconciling projected history", () => {
     const live = processAgentStreamEvents({
       events: [makeStreamReducerEvent(makeAssistantTimelineEvent("First paragraph.\n\nSec"), 2)],

@@ -752,6 +752,13 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     type: z.literal("assistant_message"),
     text: z.string(),
     messageId: z.string().optional(),
+    model: z
+      .object({
+        provider: z.string(),
+        modelId: z.string(),
+        thinkingOptionId: z.string().nullable().optional(),
+      })
+      .optional(),
   }),
   z.object({
     type: z.literal("reasoning"),

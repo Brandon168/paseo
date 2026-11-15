@@ -345,24 +345,41 @@ function getStreamEvents(events: AgentManagerEvent[], agentId: string): AgentMan
   return events.filter((event) => event.type === "agent_stream" && event.agentId === agentId);
 }
 
+const STAMPED_MODEL = { provider: "codex", modelId: "test-model" };
+
 function getTimelineStreamEvents(
   events: AgentManagerEvent[],
   agentId: string,
 ): AgentManagerEvent[] {
-  return getStreamEvents(events, agentId).filter(
-    (event) => event.type === "agent_stream" && event.event.type === "timeline",
-  );
+  const timelineEvents: AgentManagerEvent[] = [];
+  for (const event of getStreamEvents(events, agentId)) {
+    if (event.type !== "agent_stream" || event.event.type !== "timeline") {
+      continue;
+    }
+    const item = withoutModel(event.event.item);
+    timelineEvents.push({ ...event, event: { ...event.event, item } });
+  }
+  return timelineEvents;
+}
+
+// These tests are about row order and coalescing; the stamped answering model has its own tests.
+function withoutModel(item: AgentTimelineItem): AgentTimelineItem {
+  if (item.type !== "assistant_message" || !item.model) {
+    return item;
+  }
+  const { model: _model, ...rest } = item;
+  return rest;
 }
 
 function getTimelineItems(rows: AgentTimelineRow[]): AgentTimelineItem[] {
-  return rows.map((row) => row.item);
+  return rows.map((row) => withoutModel(row.item));
 }
 
 // The leading-edge flush emits the first chunk of a burst as its own row. Clients
 // read the projected timeline, where mergeAssistantChunks/mergeReasoningChunks
 // join those contiguous rows back together, so history reads the same either way.
 function getProjectedTimelineItems(rows: AgentTimelineRow[]): AgentTimelineItem[] {
-  return projectTimelineRows({ rows, mode: "projected" }).map((entry) => entry.item);
+  return projectTimelineRows({ rows, mode: "projected" }).map((entry) => withoutModel(entry.item));
 }
 
 function expectContiguousRowSeqs(rows: AgentTimelineRow[], expected: number[]): void {
@@ -1308,7 +1325,7 @@ describe("target coalesced behavior", () => {
           type: "timeline",
           provider: "codex",
           turnId: "turn-1",
-          item: { type: "assistant_message", text: "hello " },
+          item: { type: "assistant_message", text: "hello ", model: STAMPED_MODEL },
         },
       });
       await expect(stream.next()).resolves.toEqual({
@@ -1317,7 +1334,7 @@ describe("target coalesced behavior", () => {
           type: "timeline",
           provider: "codex",
           turnId: "turn-1",
-          item: { type: "assistant_message", text: "world" },
+          item: { type: "assistant_message", text: "world", model: STAMPED_MODEL },
         },
       });
       await expect(stream.next()).resolves.toEqual({

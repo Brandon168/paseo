@@ -5,6 +5,7 @@ import { i18n } from "@/i18n/i18next";
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
 import { createNativeStreamStrategy } from "./strategy-native";
+import { AssistantTurnFooter } from "@/components/message";
 import { CompletedTurnFooterRow } from "./turn-footer";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -91,4 +92,60 @@ it.each([
     [input.duration]: 1,
     "Friday 11:11 PM": 1,
   });
+});
+
+const getDoneContent = () => "Done.";
+const noFork = () => undefined;
+
+function renderModelFooter(width: number, modelLabel: string | null): void {
+  host.style.width = `${width}px`;
+  act(() =>
+    root.render(
+      <AssistantTurnFooter
+        getContent={getDoneContent}
+        completedAt={FRIDAY_NIGHT}
+        durationMs={26_000}
+        modelLabel={modelLabel}
+        onFork={noFork}
+      />,
+    ),
+  );
+}
+
+function textElement(testId: string): HTMLElement | null {
+  return host.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+}
+
+it("shows which model answered after the timing label", () => {
+  renderModelFooter(880, "DS V4.1 Flash · Direct · high");
+
+  const model = textElement("turn-footer-model-label");
+  const timing = textElement("turn-footer-timing-label");
+  expect(model?.textContent).toBe("DS V4.1 Flash · Direct · high");
+  expect(paintedLinesByLabel(host)["DS V4.1 Flash · Direct · high"]).toBe(1);
+  expect(model && timing && timing.getBoundingClientRect().left).toBeLessThan(
+    model?.getBoundingClientRect().left ?? 0,
+  );
+});
+
+it("adds no model label when there is none to show", () => {
+  renderModelFooter(880, null);
+
+  expect(textElement("turn-footer-model-label")).toBeNull();
+  expect(textElement("turn-footer-timing-label")?.textContent).toBe("Worked for 26s");
+});
+
+it("truncates a long model label on a phone width and keeps the timing label whole", () => {
+  renderModelFooter(300, "DS V4.1 Flash 1017 [Fast] · Gateway · high");
+
+  const model = textElement("turn-footer-model-label");
+  const timing = textElement("turn-footer-timing-label");
+  expect(model).not.toBeNull();
+  expect(model?.scrollWidth).toBeGreaterThan(model?.clientWidth ?? 0);
+  expect(paintedLinesByLabel(host)["DS V4.1 Flash 1017 [Fast] · Gateway · high"]).toBe(1);
+  expect(paintedLinesByLabel(host)["Worked for 26s"]).toBe(1);
+  expect(timing?.getBoundingClientRect().right ?? 0).toBeLessThanOrEqual(
+    model?.getBoundingClientRect().left ?? 0,
+  );
+  expect(model?.getBoundingClientRect().right ?? 0).toBeLessThanOrEqual(300);
 });

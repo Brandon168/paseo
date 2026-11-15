@@ -2542,6 +2542,11 @@ export const ptBR: TranslationResources = {
         description:
           "No seletor de modelos, mostra os modelos de cada rota (como deepseek/ ou vercel-…/ do OpenCode) sob o próprio cabeçalho",
       },
+      showModelOnTurns: {
+        label: "Mostrar o modelo em cada turno",
+        description:
+          "Sob cada resposta concluída, mostra qual modelo respondeu e o nível de raciocínio",
+      },
       chatDisplay: {
         label: "Exibição do chat",
         description: "Quanto do trabalho do agente o chat mostra",

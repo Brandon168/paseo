@@ -44,6 +44,7 @@ function sourceTimelineItem(item: StreamItem): AgentTimelineItem | null {
         type: "assistant_message",
         text: item.text,
         ...(item.messageId ? { messageId: item.messageId } : {}),
+        ...(item.model ? { model: item.model } : {}),
       };
     case "thought":
       return { type: "reasoning", text: item.text };

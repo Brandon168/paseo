@@ -19,6 +19,7 @@ import type { TurnFooterHost } from "./layout";
 import { AssistantForkMenu } from "@/components/assistant-fork-menu";
 import { SyncedLoader } from "@/components/synced-loader";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { useTurnModelLabel } from "./use-turn-model-label";
 
 const ThemedSyncedLoader = withUnistyles(SyncedLoader);
 const workingIndicatorColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
@@ -51,6 +52,7 @@ export const TurnFooter = memo(function TurnFooter({
   host,
   strategy,
   supportsTimelineCursor,
+  serverId,
   onForkAssistantTurn,
   onForkInFlightTurn,
 }: {
@@ -59,6 +61,8 @@ export const TurnFooter = memo(function TurnFooter({
   host: TurnFooterHost | null;
   strategy: TurnContentStrategy;
   supportsTimelineCursor: boolean;
+  /** Host whose model catalog names the answering model; without it no model label shows. */
+  serverId?: string;
   onForkAssistantTurn?: AssistantTurnForkHandler;
   onForkInFlightTurn?: InFlightTurnForkHandler;
 }) {
@@ -82,6 +86,7 @@ export const TurnFooter = memo(function TurnFooter({
       timing={host.timing}
       startIndex={host.startIndex}
       supportsTimelineCursor={supportsTimelineCursor}
+      serverId={serverId}
       onForkAssistantTurn={onForkAssistantTurn}
     />
   );
@@ -93,6 +98,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   timing,
   startIndex,
   supportsTimelineCursor,
+  serverId,
   onForkAssistantTurn,
 }: {
   strategy: TurnContentStrategy;
@@ -100,18 +106,24 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   timing?: TurnTiming;
   startIndex: number;
   supportsTimelineCursor: boolean;
+  serverId?: string;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
+  const footerProps = {
+    strategy,
+    items,
+    timing,
+    startIndex,
+    supportsTimelineCursor,
+    onForkAssistantTurn,
+  };
   return (
     <TurnFooterRow>
-      <CompletedTurnFooter
-        strategy={strategy}
-        items={items}
-        timing={timing}
-        startIndex={startIndex}
-        supportsTimelineCursor={supportsTimelineCursor}
-        onForkAssistantTurn={onForkAssistantTurn}
-      />
+      {serverId && timing?.model ? (
+        <ModelLabelledTurnFooter {...footerProps} serverId={serverId} model={timing.model} />
+      ) : (
+        <CompletedTurnFooter {...footerProps} />
+      )}
     </TurnFooterRow>
   );
 });
@@ -160,21 +172,39 @@ function RunningTurnFooter({
   );
 }
 
+interface CompletedTurnFooterProps {
+  strategy: TurnContentStrategy;
+  items: StreamItem[];
+  timing?: TurnTiming;
+  startIndex: number;
+  supportsTimelineCursor: boolean;
+  modelLabel?: string | null;
+  onForkAssistantTurn?: AssistantTurnForkHandler;
+}
+
+// Only turns with a stamped model read the catalog and the setting, so footers of older turns
+// stay free of those subscriptions.
+function ModelLabelledTurnFooter({
+  serverId,
+  model,
+  ...props
+}: Omit<CompletedTurnFooterProps, "modelLabel"> & {
+  serverId: string;
+  model: NonNullable<TurnTiming["model"]>;
+}) {
+  const modelLabel = useTurnModelLabel(serverId, model);
+  return <CompletedTurnFooter {...props} modelLabel={modelLabel} />;
+}
+
 function CompletedTurnFooter({
   strategy,
   items,
   timing,
   startIndex,
   supportsTimelineCursor,
+  modelLabel,
   onForkAssistantTurn,
-}: {
-  strategy: TurnContentStrategy;
-  items: StreamItem[];
-  timing?: TurnTiming;
-  startIndex: number;
-  supportsTimelineCursor: boolean;
-  onForkAssistantTurn?: AssistantTurnForkHandler;
-}) {
+}: CompletedTurnFooterProps) {
   const getContent = useCallback(
     () =>
       collectAssistantResponseContentForStreamRenderStrategy({
@@ -204,6 +234,7 @@ function CompletedTurnFooter({
         getContent={items[startIndex]?.kind === "assistant_message" ? getContent : undefined}
         completedAt={timing?.completedAt}
         durationMs={timing?.durationMs}
+        modelLabel={modelLabel}
         onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
       />
     </View>

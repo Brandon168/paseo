@@ -42,6 +42,11 @@ export function ChatSection() {
     [updateSettings],
   );
 
+  const changeShowModelOnTurns = useCallback(
+    (showModelOnTurns: boolean) => void updateSettings({ showModelOnTurns }),
+    [updateSettings],
+  );
+
   return (
     <View>
       <SettingsSection title={t("settings.appearance.detailLevel.title")}>
@@ -72,6 +77,12 @@ export function ChatSection() {
             hint={t("settings.general.groupModelsByRoute.description")}
             value={settings.groupModelsByRoute}
             onValueChange={changeGroupModelsByRoute}
+          />
+          <SettingsSwitch
+            label={t("settings.general.showModelOnTurns.label")}
+            hint={t("settings.general.showModelOnTurns.description")}
+            value={settings.showModelOnTurns}
+            onValueChange={changeShowModelOnTurns}
           />
         </SettingsCard>
       </SettingsSection>

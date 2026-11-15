@@ -2527,6 +2527,10 @@ export const ja: TranslationResources = {
         description:
           "モデル選択で、各ルート（OpenCode の deepseek/ や vercel-…/ など）のモデルを見出しごとに表示します",
       },
+      showModelOnTurns: {
+        label: "各ターンにモデルを表示",
+        description: "完了した各返信の下に、回答したモデルと思考レベルを表示します",
+      },
       chatDisplay: {
         label: "チャットの表示",
         description: "チャットに表示するエージェントの作業量",

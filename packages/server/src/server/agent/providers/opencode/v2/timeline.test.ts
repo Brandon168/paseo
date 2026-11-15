@@ -99,6 +99,35 @@ test("a tool's image output is shown as an image, not as base64 in the tool outp
   expect(await collectTimelineSnapshot(timeline, [screenshot])).toEqual([]);
 });
 
+test("replayed assistant text names the model and variant OpenCode recorded for it", async () => {
+  const answer: SessionMessageAssistant = {
+    ...assistant([{ type: "text", text: "Hello" }]),
+    model: { providerID: "claude-agent", id: "sonnet", variant: "medium" },
+  };
+  const unvaried: SessionMessageAssistant = {
+    ...assistant([{ type: "text", text: "Again" }]),
+    id: "answer-2",
+    model: { providerID: "deepseek", id: "deepseek-flash" },
+  };
+
+  const events = await collectTimelineSnapshot(new V2Timeline(), [answer, unvaried]);
+
+  expect(events.map((event) => event.type === "timeline" && event.item)).toEqual([
+    {
+      type: "assistant_message",
+      text: "Hello",
+      messageId: "answer",
+      model: { provider: "opencode", modelId: "claude-agent/sonnet", thinkingOptionId: "medium" },
+    },
+    {
+      type: "assistant_message",
+      text: "Again",
+      messageId: "answer-2",
+      model: { provider: "opencode", modelId: "deepseek/deepseek-flash", thinkingOptionId: null },
+    },
+  ]);
+});
+
 test("a surrogate pair split across deltas streams back intact", () => {
   const timeline = new V2Timeline();
   const part = { assistantMessageID: "answer", type: "text" as const, ordinal: 0 };

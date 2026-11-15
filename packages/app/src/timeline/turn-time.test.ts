@@ -247,3 +247,57 @@ it("times a heartbeat that ends with tools and no assistant text", () => {
   });
   assert.equal(timing.byItemId.get("last")?.durationMs, 5000);
 });
+
+describe("turn model", () => {
+  const first = { provider: "opencode", modelId: "route-a/first", thinkingOptionId: "low" };
+  const second = { provider: "opencode", modelId: "route-b/second", thinkingOptionId: "high" };
+  const withModel = (item: StreamItem, model: typeof first): StreamItem =>
+    item.kind === "assistant_message" ? { ...item, model } : item;
+
+  it("names the model of each turn separately after a switch", () => {
+    const timing = deriveStreamTurnTiming({
+      isTurnActive: false,
+      activeTurnStartedAt: null,
+      tail: [
+        user("u1", new Date("2026-05-15T00:00:00.000Z")),
+        withModel(assistant("a1", new Date("2026-05-15T00:00:05.000Z")), first),
+        user("u2", new Date("2026-05-15T00:01:00.000Z")),
+      ],
+      head: [withModel(assistant("a2", new Date("2026-05-15T00:01:04.000Z")), second)],
+    });
+
+    assert.deepEqual(timing.byItemId.get("a1")?.model, first);
+    assert.deepEqual(timing.byItemId.get("a2")?.model, second);
+  });
+
+  it("uses the last stamped assistant message of a turn", () => {
+    const timing = deriveStreamTurnTiming({
+      isTurnActive: false,
+      activeTurnStartedAt: null,
+      tail: [
+        user("u1", new Date("2026-05-15T00:00:00.000Z")),
+        withModel(assistant("a1", new Date("2026-05-15T00:00:05.000Z")), first),
+        assistant("a2", new Date("2026-05-15T00:00:09.000Z")),
+        withModel(assistant("a3", new Date("2026-05-15T00:00:12.000Z")), second),
+      ],
+      head: [],
+    });
+
+    assert.deepEqual(timing.byItemId.get("a3")?.model, second);
+  });
+
+  it("leaves older turns without a stamped model unlabelled", () => {
+    const timing = deriveStreamTurnTiming({
+      isTurnActive: false,
+      activeTurnStartedAt: null,
+      tail: [
+        user("u1", new Date("2026-05-15T00:00:00.000Z")),
+        assistant("a1", new Date("2026-05-15T00:00:05.000Z")),
+      ],
+      head: [],
+    });
+
+    assert.equal(timing.byItemId.get("a1")?.model, undefined);
+    assert.equal("model" in (timing.byItemId.get("a1") ?? {}), false);
+  });
+});

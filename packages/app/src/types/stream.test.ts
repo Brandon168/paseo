@@ -68,6 +68,30 @@ it("updates a resolved Claude plan at its proposal position across a follow-up",
   });
 });
 
+describe("assistant message model", () => {
+  const model = { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "medium" };
+  const chunk = (text: string, withModel: boolean): AgentStreamEventPayload => ({
+    type: "timeline",
+    provider: "opencode",
+    item: { type: "assistant_message", text, messageId: "m1", ...(withModel ? { model } : {}) },
+  });
+
+  it("stays on the assistant row as later chunks extend it", () => {
+    const first = reduceStreamUpdate([], chunk("Hel", true), new Date(1));
+    const extended = reduceStreamUpdate(first, chunk("lo", false), new Date(2));
+
+    expect(extended).toHaveLength(1);
+    expect(extended[0]).toMatchObject({ kind: "assistant_message", text: "Hello", model });
+  });
+
+  it("is absent when the daemon stamped none", () => {
+    const [row] = reduceStreamUpdate([], chunk("Hi", false), new Date(1));
+
+    expect(row).toMatchObject({ kind: "assistant_message", text: "Hi" });
+    expect(row).not.toHaveProperty("model");
+  });
+});
+
 describe("plugin timeline rows", () => {
   it("uses the protocol identity format for stream tool and plugin rows", () => {
     const tool = {

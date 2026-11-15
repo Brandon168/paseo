@@ -1,9 +1,12 @@
+import type { AssistantMessageModel } from "@getpaseo/protocol/agent-types";
 import type { StreamItem } from "@/types/stream";
 import { startsNewTurn, isTurnTrigger } from "@/agent-stream/turn-membership";
 
 export interface TurnTiming {
   completedAt: Date;
   durationMs: number | null;
+  /** Model of the turn's last assistant message, when the daemon stamped one. */
+  model?: AssistantMessageModel;
 }
 
 export interface StreamTurnTiming {
@@ -15,6 +18,7 @@ interface OpenTurn {
   userAt: Date | null;
   lastItemAt: Date | null;
   assistantIds: readonly string[];
+  model: AssistantMessageModel | null;
   previousItem: StreamItem | null;
 }
 
@@ -33,6 +37,7 @@ const EMPTY_OPEN_TURN: OpenTurn = {
   userAt: null,
   lastItemAt: null,
   assistantIds: [],
+  model: null,
   previousItem: null,
 };
 
@@ -43,6 +48,7 @@ function closeTurn(turn: OpenTurn, into: Map<string, TurnTiming>): void {
   const timing: TurnTiming = {
     completedAt: turn.lastItemAt,
     durationMs: turn.userAt ? Math.max(0, turn.lastItemAt.getTime() - turn.userAt.getTime()) : null,
+    ...(turn.model ? { model: turn.model } : {}),
   };
   let footerIds = turn.assistantIds;
   if (footerIds.length === 0 && turn.previousItem?.kind === "tool_call") {
@@ -61,21 +67,41 @@ function walkTurns(
   let userAt = from.userAt;
   let lastItemAt = from.lastItemAt;
   let assistantIds = [...from.assistantIds];
+  let model = from.model;
   let previousItem = from.previousItem;
   for (const item of items) {
     if (startsNewTurn(item, previousItem)) {
-      closeTurn({ userAt, lastItemAt, assistantIds, previousItem }, into);
+      closeTurn({ userAt, lastItemAt, assistantIds, model, previousItem }, into);
       userAt = isTurnTrigger(item) ? item.timestamp : null;
       lastItemAt = null;
       assistantIds = [];
+      model = null;
     }
     lastItemAt = item.timestamp;
     if (item.kind === "assistant_message") {
       assistantIds.push(item.id);
+      // The last stamped message names the model that finished the turn.
+      model = item.model ?? model;
     }
     previousItem = item;
   }
-  return { userAt, lastItemAt, assistantIds, previousItem };
+  return { userAt, lastItemAt, assistantIds, model, previousItem };
+}
+
+function isSameModel(
+  a: AssistantMessageModel | undefined,
+  b: AssistantMessageModel | undefined,
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  return (
+    a !== undefined &&
+    b !== undefined &&
+    a.provider === b.provider &&
+    a.modelId === b.modelId &&
+    a.thinkingOptionId === b.thinkingOptionId
+  );
 }
 
 function areTimingsEqual(a: Map<string, TurnTiming>, b: Map<string, TurnTiming>): boolean {
@@ -87,7 +113,8 @@ function areTimingsEqual(a: Map<string, TurnTiming>, b: Map<string, TurnTiming>)
     if (
       !other ||
       other.completedAt.getTime() !== timing.completedAt.getTime() ||
-      other.durationMs !== timing.durationMs
+      other.durationMs !== timing.durationMs ||
+      !isSameModel(other.model, timing.model)
     ) {
       return false;
     }

@@ -5005,6 +5005,13 @@ export class AgentManager {
     const identified = attachManagedTurnIdentity(agent, event, options?.fromHistory === true);
     event = identified.event;
     const eventTurnId = identified.turnId;
+    if (!options?.fromHistory && event.type === "timeline") {
+      // Before the coalescer, which records streamed text itself and merges chunks.
+      const item = this.withAssistantModel(agent, event.item);
+      if (item !== event.item) {
+        event = { ...event, item };
+      }
+    }
     const isForegroundEvent = agent.activeForegroundTurnId === eventTurnId;
     this.traceHandleStreamEventStart(agent, event, eventTurnId, isForegroundEvent);
     if (
@@ -5287,6 +5294,34 @@ export class AgentManager {
       }
       flags.shouldNotifyWaiters = true;
     }
+  }
+
+  /**
+   * Live assistant messages record which model answered, so the label stays right after the
+   * user switches models. History replays are not stamped: the agent's current model says
+   * nothing about who wrote them. A chunk is stamped when it arrives, so a message that
+   * outlives a model switch keeps the first chunk's model through the coalescer.
+   */
+  private withAssistantModel(
+    agent: ActiveManagedAgent,
+    item: AgentTimelineItem,
+  ): AgentTimelineItem {
+    if (item.type !== "assistant_message" || item.model) {
+      return item;
+    }
+    const modelId = agent.runtimeInfo?.model ?? agent.config.model;
+    if (!modelId) {
+      return item;
+    }
+    const thinkingOptionId = agent.runtimeInfo?.thinkingOptionId ?? agent.config.thinkingOptionId;
+    return {
+      ...item,
+      model: {
+        provider: agent.provider,
+        modelId,
+        ...(thinkingOptionId !== undefined ? { thinkingOptionId } : {}),
+      },
+    };
   }
 
   private onStreamTurnCompleted(params: {

@@ -238,6 +238,17 @@ describe("loadAppSettingsFromStorage", () => {
     expect((await loadAppSettingsFromStorage(deps)).groupModelsByRoute).toBe(true);
   });
 
+  it("shows the model on each turn by default and loads an explicit opt-out", async () => {
+    expect((await loadAppSettingsFromStorage(makeDeps())).showModelOnTurns).toBe(true);
+
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ showModelOnTurns: false }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(deps)).showModelOnTurns).toBe(false);
+  });
+
   it("uses Enter to send by default", async () => {
     const deps = makeDeps();
 

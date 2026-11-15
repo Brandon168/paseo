@@ -229,6 +229,24 @@ it("keeps the unsettled turn with the cached messages", async () => {
   expect(await createCache(storage).readTimeline(SERVER_ID, "agent-1")).toEqual(cached);
 });
 
+it("keeps which model answered each cached assistant message across a reload", async () => {
+  const storage = new MemoryStorage();
+  const writer = createCache(storage);
+  const stamped = {
+    ...timeline(),
+    items: [
+      {
+        ...timelineItem(),
+        model: { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "high" },
+      },
+    ],
+  };
+  writer.commitTimeline(SERVER_ID, "agent-1", stamped);
+  await writer.flush();
+
+  expect(await createCache(storage).readTimeline(SERVER_ID, "agent-1")).toEqual(stamped);
+});
+
 function commitDirectory(
   cache: ReplicaCache,
   serverId: string,

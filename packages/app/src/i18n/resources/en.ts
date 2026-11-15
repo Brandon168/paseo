@@ -2631,6 +2631,10 @@ export const en = {
         description:
           "In the model picker, show models from each route (such as OpenCode's deepseek/ or vercel-…/) under their own heading",
       },
+      showModelOnTurns: {
+        label: "Show model on each turn",
+        description: "Under each finished reply, show which model answered and its thinking level",
+      },
       chatDisplay: {
         label: "Chat display",
         description: "How much of an agent's work the chat shows",
