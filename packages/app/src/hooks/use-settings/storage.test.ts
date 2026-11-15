@@ -227,6 +227,17 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.chatOutlineEnabled).toBe(false);
   });
 
+  it("keeps model route grouping off by default and loads it when enabled", async () => {
+    expect((await loadAppSettingsFromStorage(makeDeps())).groupModelsByRoute).toBe(false);
+
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ groupModelsByRoute: true }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(deps)).groupModelsByRoute).toBe(true);
+  });
+
   it("uses Enter to send by default", async () => {
     const deps = makeDeps();
 

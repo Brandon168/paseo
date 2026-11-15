@@ -3,6 +3,7 @@ import {
   composerToolbarGeometry,
   resolveComposerControlDensity,
   resolveComposerControlPresentation,
+  resolveModelPickerDesktopWidth,
   resolveModelTriggerLabels,
 } from "./layout";
 
@@ -424,5 +425,19 @@ describe("folded model control labels", () => {
 
   it("needs no measurement without a thinking label", () => {
     expect(resolveModelTriggerLabels({ hasThinking: false, measurements: {} })).toBe("model");
+  });
+});
+
+describe("model picker desktop width", () => {
+  it("is 520 px on a roomy window", () => {
+    expect(resolveModelPickerDesktopWidth(1440)).toBe(520);
+  });
+
+  it("leaves a margin on a mid-size window", () => {
+    expect(resolveModelPickerDesktopWidth(500)).toBe(468);
+  });
+
+  it("never gets narrower than the original 360 px", () => {
+    expect(resolveModelPickerDesktopWidth(320)).toBe(360);
   });
 });

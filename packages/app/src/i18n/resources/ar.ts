@@ -2524,6 +2524,11 @@ export const ar: TranslationResources = {
         label: "عرض التفكير دائماً",
         description: "إظهار تفكير الوكيل وخطوات الاستدلال بشكل كامل بشكل افتراضي",
       },
+      groupModelsByRoute: {
+        label: "تجميع النماذج حسب المسار",
+        description:
+          "في منتقي النماذج، اعرض نماذج كل مسار (مثل deepseek/ أو vercel-…/ في OpenCode) تحت عنوان خاص بها",
+      },
       chatDisplay: {
         label: "عرض المحادثة",
         description: "مقدار عمل الوكيل الذي تعرضه المحادثة",

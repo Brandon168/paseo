@@ -2544,6 +2544,11 @@ export const es: TranslationResources = {
         description:
           "Mostrar los bloques de pensamiento y razonamiento del agente totalmente expandidos de forma predeterminada",
       },
+      groupModelsByRoute: {
+        label: "Agrupar modelos por ruta",
+        description:
+          "En el selector de modelos, muestra los modelos de cada ruta (como deepseek/ o vercel-…/ de OpenCode) bajo su propio encabezado",
+      },
       chatDisplay: {
         label: "Visualización del chat",
         description: "Cuánto del trabajo del agente muestra el chat",

@@ -43,7 +43,6 @@ import { useProviderIcon } from "@/components/provider-icons";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import {
-  buildProviderQualifiedDescription,
   buildSelectedTriggerLabel,
   filterAndRankModelRows,
   getAllProviderModelRows,
@@ -53,6 +52,8 @@ import {
   type ProviderSelectorProvider,
 } from "@/provider-selection/provider-selection";
 import { useProviderSettingsStore } from "@/stores/provider-settings-store";
+import { useAppSettings } from "@/hooks/use-settings";
+import { buildModelListItems, type ModelListItem } from "@/provider-selection/model-route-groups";
 import { useCurrentOverlayLayer } from "@/lib/overlay-root";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import {
@@ -662,7 +663,7 @@ function ModelRow({
   row,
   serverId,
   isSelected,
-  showProviderLabel = false,
+  description,
   onPress,
   profiledRows,
   onCreateProfile,
@@ -672,7 +673,7 @@ function ModelRow({
   row: ProviderSelectionModelRow;
   serverId: string | null;
   isSelected: boolean;
-  showProviderLabel?: boolean;
+  description: string | undefined;
   onPress: () => void;
   profiledRows: AgentProfilePickerRowModel[];
   onCreateProfile?: (seed: AgentProfileSeed) => void;
@@ -686,7 +687,6 @@ function ModelRow({
     [row.provider, serverId],
   );
 
-  const description = showProviderLabel ? buildProviderQualifiedDescription(row) : row.description;
   const primary = profiledRows[profiledRows.length - 1];
 
   const handleCreateProfile = useCallback(() => {
@@ -828,7 +828,7 @@ function SelectableModelRow({
   row,
   serverId,
   isSelected,
-  showProviderLabel,
+  description,
   onSelect,
   profiledRows,
   onCreateProfile,
@@ -838,7 +838,7 @@ function SelectableModelRow({
   row: ProviderSelectionModelRow;
   serverId: string | null;
   isSelected: boolean;
-  showProviderLabel?: boolean;
+  description: string | undefined;
   onSelect: (provider: string, modelId: string) => void;
   profiledRows: AgentProfilePickerRowModel[];
   onCreateProfile?: (seed: AgentProfileSeed) => void;
@@ -853,7 +853,7 @@ function SelectableModelRow({
       row={row}
       serverId={serverId}
       isSelected={isSelected}
-      showProviderLabel={showProviderLabel}
+      description={description}
       onPress={handlePress}
       profiledRows={profiledRows}
       onCreateProfile={onCreateProfile}
@@ -1080,21 +1080,21 @@ function IndependentScrollBoundary({ children }: { children: React.ReactElement 
 }
 
 function IndependentModelList({
-  rows,
+  items,
   renderItem,
   header,
 }: {
-  rows: ProviderSelectionModelRow[];
-  renderItem: ({ item }: { item: ProviderSelectionModelRow }) => React.ReactElement;
+  items: ModelListItem[];
+  renderItem: ({ item }: { item: ModelListItem }) => React.ReactElement;
   header?: React.ReactElement;
 }) {
   return (
     <IndependentScrollBoundary>
       <FlatList
-        data={rows}
+        data={items}
         renderItem={renderItem}
         ListHeaderComponent={header}
-        keyExtractor={getModelRowKey}
+        keyExtractor={getModelListItemKey}
         style={styles.virtualizedModelList}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -1107,8 +1107,8 @@ function IndependentModelList({
   );
 }
 
-function getModelRowKey(row: ProviderSelectionModelRow): string {
-  return row.favoriteKey;
+function getModelListItemKey(item: ModelListItem): string {
+  return item.key;
 }
 
 function IndependentProviderList({ children }: { children: React.ReactNode }) {
@@ -1160,20 +1160,33 @@ function ModelRowList({
   onEditProfiles?: () => void;
 }) {
   const isCompact = useIsCompactFormFactor();
+  const { settings } = useAppSettings();
+  const grouped = settings.groupModelsByRoute;
+  const items = useMemo(
+    () => buildModelListItems(rows, { grouped, showProviderLabel }),
+    [grouped, rows, showProviderLabel],
+  );
   const renderItem = useCallback(
-    ({ item }: { item: ProviderSelectionModelRow }) => (
-      <SelectableModelRow
-        row={item}
-        serverId={serverId}
-        isSelected={item.provider === selectedProvider && item.modelId === selectedModel}
-        showProviderLabel={showProviderLabel}
-        onSelect={onSelect}
-        profiledRows={profiledLookup.get(`${item.provider}:${item.modelId}`) ?? []}
-        onCreateProfile={onCreateProfile}
-        onEditProfile={onEditProfile}
-        onEditProfiles={onEditProfiles}
-      />
-    ),
+    ({ item }: { item: ModelListItem }) =>
+      item.kind === "header" ? (
+        <View style={styles.sectionHeading} testID={`model-route-heading-${item.label}`}>
+          <Text numberOfLines={1} style={styles.sectionHeadingText}>
+            {item.label}
+          </Text>
+        </View>
+      ) : (
+        <SelectableModelRow
+          row={item.row}
+          serverId={serverId}
+          isSelected={item.row.provider === selectedProvider && item.row.modelId === selectedModel}
+          description={item.description}
+          onSelect={onSelect}
+          profiledRows={profiledLookup.get(`${item.row.provider}:${item.row.modelId}`) ?? []}
+          onCreateProfile={onCreateProfile}
+          onEditProfile={onEditProfile}
+          onEditProfiles={onEditProfiles}
+        />
+      ),
     [
       onEditProfile,
       onEditProfiles,
@@ -1183,19 +1196,18 @@ function ModelRowList({
       selectedModel,
       selectedProvider,
       serverId,
-      showProviderLabel,
     ],
   );
-  const keyExtractor = useCallback((row: ProviderSelectionModelRow) => row.favoriteKey, []);
+  const keyExtractor = useCallback((item: ModelListItem) => item.key, []);
 
   if (scrolling === "independent") {
-    return <IndependentModelList rows={rows} renderItem={renderItem} header={header} />;
+    return <IndependentModelList items={items} renderItem={renderItem} header={header} />;
   }
 
   if (isCompact && isNative) {
     return (
       <SheetFlatList
-        data={rows}
+        data={items}
         renderItem={renderItem}
         ListHeaderComponent={header}
         keyExtractor={keyExtractor}
@@ -1210,8 +1222,8 @@ function ModelRowList({
   return (
     <View>
       {header}
-      {rows.map((row) => (
-        <View key={row.favoriteKey}>{renderItem({ item: row })}</View>
+      {items.map((item) => (
+        <View key={item.key}>{renderItem({ item })}</View>
       ))}
     </View>
   );

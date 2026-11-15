@@ -2615,6 +2615,11 @@ export const en = {
         label: "Always expand reasoning",
         description: "Show agent thinking and chain-of-thought blocks fully expanded by default",
       },
+      groupModelsByRoute: {
+        label: "Group models by route",
+        description:
+          "In the model picker, show models from each route (such as OpenCode's deepseek/ or vercel-…/) under their own heading",
+      },
       chatDisplay: {
         label: "Chat display",
         description: "How much of an agent's work the chat shows",

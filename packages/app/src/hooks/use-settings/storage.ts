@@ -105,6 +105,8 @@ export interface AppSettings {
   autoExpandReasoning: boolean;
   chatDisplay: ChatDisplay;
   chatOutlineEnabled: boolean;
+  /** Model picker: group `route/model` ids (OpenCode routes) under route headings. */
+  groupModelsByRoute: boolean;
   vimKeybindings: boolean;
   sendShortcut: SendShortcut;
   filePanelAssociations: Record<string, string>;
@@ -162,6 +164,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   autoExpandReasoning: false,
   chatDisplay: "collapseTurns",
   chatOutlineEnabled: true,
+  groupModelsByRoute: false,
   vimKeybindings: false,
   sendShortcut: "enter",
   filePanelAssociations: {},
@@ -267,6 +270,7 @@ const StoredAppSettingsSchema = z
     // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
     compactToolCalls: z.boolean().optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),
+    groupModelsByRoute: z.boolean().catch(false),
     vimKeybindings: z.boolean().catch(false),
     sendShortcut: z.enum(["enter", "mod-enter"]).catch("enter"),
     filePanelAssociations: z.record(z.string(), z.string()).catch({}),

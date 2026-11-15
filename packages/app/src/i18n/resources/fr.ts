@@ -2544,6 +2544,11 @@ export const fr: TranslationResources = {
         label: "Toujours afficher le raisonnement",
         description: "Afficher par défaut le raisonnement de l’agent entièrement déplié",
       },
+      groupModelsByRoute: {
+        label: "Regrouper les modèles par route",
+        description:
+          "Dans le sélecteur de modèles, affiche les modèles de chaque route (comme deepseek/ ou vercel-…/ d'OpenCode) sous leur propre en-tête",
+      },
       chatDisplay: {
         label: "Affichage du chat",
         description: "La part du travail de l’agent affichée dans le chat",

@@ -67,6 +67,7 @@ import {
   composerToolbarGeometry,
   resolveComposerControlDensity,
   resolveComposerControlPresentation,
+  resolveModelPickerDesktopWidth,
   type ComposerControlDensity,
   type ComposerControlPresentation,
 } from "@/composer/agent-controls/layout";
@@ -754,6 +755,8 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const sheetBridge = useComposerSheetBridge();
   const { theme } = useUnistyles();
   const { t } = useTranslation();
+  const { width: windowWidth } = useWindowDimensions();
+  const modelPickerWidth = resolveModelPickerDesktopWidth(windowWidth);
   const {
     provider,
     selectedModelId,
@@ -819,7 +822,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
                 isRetryingProvider={isRetryingModelProvider}
                 serverId={modelSelectorServerId}
                 desktopPlacement="top-start"
-                desktopMinWidth={360}
+                desktopMinWidth={modelPickerWidth}
                 toolbar={modelToolbar}
               />
             </View>

@@ -2461,6 +2461,11 @@ export const zhCN: TranslationResources = {
         label: "始终展开推理过程",
         description: "默认情况下完全展开 AI 的思考和推理过程",
       },
+      groupModelsByRoute: {
+        label: "按路由分组模型",
+        description:
+          "在模型选择器中，将每个路由（如 OpenCode 的 deepseek/ 或 vercel-…/）的模型显示在各自的标题下",
+      },
       chatDisplay: {
         label: "聊天显示",
         description: "聊天中显示多少智能体的工作",

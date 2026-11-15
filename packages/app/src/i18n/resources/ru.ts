@@ -2530,6 +2530,11 @@ export const ru: TranslationResources = {
         description:
           "По умолчанию полностью разворачивать блоки размышлений и хода рассуждений агента",
       },
+      groupModelsByRoute: {
+        label: "Группировать модели по маршруту",
+        description:
+          "В выборе модели показывать модели каждого маршрута (например, deepseek/ или vercel-…/ в OpenCode) под отдельным заголовком",
+      },
       chatDisplay: {
         label: "Отображение чата",
         description: "Какую часть работы агента показывает чат",

@@ -295,3 +295,11 @@ export function resolveModelTriggerLabels(input: {
   if (availableWidth === undefined || fullWidth === undefined) return "measuring";
   return fullWidth < availableWidth ? "modelAndThinking" : "model";
 }
+
+/**
+ * The model picker is wide enough for a long model name and its id; it never gets narrower
+ * than the original 360 px, and on a small window it stops a margin short of the edges.
+ */
+export function resolveModelPickerDesktopWidth(windowWidth: number): number {
+  return Math.min(520, Math.max(360, windowWidth - 32));
+}

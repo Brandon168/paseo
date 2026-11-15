@@ -37,6 +37,10 @@ export function ChatSection() {
     (chatOutlineEnabled: boolean) => void updateSettings({ chatOutlineEnabled }),
     [updateSettings],
   );
+  const changeGroupModelsByRoute = useCallback(
+    (groupModelsByRoute: boolean) => void updateSettings({ groupModelsByRoute }),
+    [updateSettings],
+  );
 
   return (
     <View>
@@ -63,6 +67,12 @@ export function ChatSection() {
               onValueChange={changeChatOutline}
             />
           )}
+          <SettingsSwitch
+            label={t("settings.general.groupModelsByRoute.label")}
+            hint={t("settings.general.groupModelsByRoute.description")}
+            value={settings.groupModelsByRoute}
+            onValueChange={changeGroupModelsByRoute}
+          />
         </SettingsCard>
       </SettingsSection>
     </View>
