@@ -2549,6 +2549,11 @@ export const fr: TranslationResources = {
         description:
           "Dans le sélecteur de modèles, affiche les modèles de chaque route (comme deepseek/ ou vercel-…/ d'OpenCode) sous leur propre en-tête",
       },
+      showModelOnTurns: {
+        label: "Afficher le modèle à chaque tour",
+        description:
+          "Sous chaque réponse terminée, affiche le modèle qui a répondu et son niveau de réflexion",
+      },
       chatDisplay: {
         label: "Affichage du chat",
         description: "La part du travail de l’agent affichée dans le chat",

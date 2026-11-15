@@ -2507,6 +2507,10 @@ export const ko: TranslationResources = {
         description:
           "모델 선택기에서 각 경로(OpenCode의 deepseek/ 또는 vercel-…/ 등)의 모델을 별도 제목 아래에 표시합니다",
       },
+      showModelOnTurns: {
+        label: "각 턴에 모델 표시",
+        description: "완료된 각 답변 아래에 응답한 모델과 사고 수준을 표시합니다",
+      },
       chatDisplay: {
         label: "채팅 표시",
         description: "채팅에 표시할 에이전트 작업의 양",

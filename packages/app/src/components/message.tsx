@@ -555,6 +555,8 @@ interface AssistantTurnFooterProps {
   getContent?: () => string;
   completedAt?: Date;
   durationMs?: number | null;
+  /** Which model answered, e.g. "Opus 5.5 · medium". Shown right-aligned and truncated first. */
+  modelLabel?: string | null;
   onFork?: (target: AssistantForkTarget) => Promise<void> | void;
 }
 
@@ -587,6 +589,11 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
     minWidth: 0,
   },
+  // With a model label beside it, the timing keeps room for its longest text and the model
+  // label gives way first.
+  labelButtonBesideModel: {
+    minWidth: 112,
+  },
   label: {
     width: "100%",
     flexShrink: 0,
@@ -598,6 +605,16 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
   },
   hiddenLabel: {
     opacity: 0,
+  },
+  modelLabel: {
+    flexShrink: 1,
+    minWidth: 0,
+    minHeight: 24,
+    textAlignVertical: "center",
+    lineHeight: 24,
+    textAlign: "right",
+    color: theme.colors.foregroundMuted,
+    fontSize: STREAM_METADATA_FONT_SIZE,
   },
 }));
 
@@ -612,6 +629,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   getContent,
   completedAt,
   durationMs,
+  modelLabel,
   onFork,
 }: AssistantTurnFooterProps) {
   const { t } = useTranslation();
@@ -678,7 +696,10 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
       ) : null}
       {primaryLabel ? (
         <Pressable
-          style={assistantTurnFooterStylesheet.labelButton}
+          style={[
+            assistantTurnFooterStylesheet.labelButton,
+            modelLabel ? assistantTurnFooterStylesheet.labelButtonBesideModel : null,
+          ]}
           onPress={handlePress}
           onHoverIn={handleHoverIn}
           onHoverOut={handleHoverOut}
@@ -711,6 +732,16 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
             </Text>
           ) : null}
         </Pressable>
+      ) : null}
+      {modelLabel ? (
+        <Text
+          style={assistantTurnFooterStylesheet.modelLabel}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          testID="turn-footer-model-label"
+        >
+          {modelLabel}
+        </Text>
       ) : null}
     </View>
   );

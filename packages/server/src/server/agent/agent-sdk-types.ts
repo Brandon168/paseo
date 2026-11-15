@@ -399,9 +399,16 @@ export interface PluginTimelineItem {
   data: JsonValue;
 }
 
+/** Which model produced an assistant message, stamped by the daemon when the message is recorded. */
+export interface AssistantMessageModel {
+  provider: string;
+  modelId: string;
+  thinkingOptionId?: string | null;
+}
+
 export type AgentTimelineItem =
   | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
-  | { type: "assistant_message"; text: string; messageId?: string }
+  | { type: "assistant_message"; text: string; messageId?: string; model?: AssistantMessageModel }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem
   | { type: "todo"; items: AgentTaskItem[] }

@@ -156,6 +156,24 @@ describe("AgentStreamCoalescer", () => {
     ]);
   });
 
+  test("a coalesced assistant message keeps the model stamped on its first chunk", async () => {
+    const { coalescer, flushes } = createHarness();
+    primeLeadingEdge(coalescer, flushes);
+    const model = { provider: "opencode", modelId: "route-a/first", thinkingOptionId: "low" };
+
+    coalescer.handle("agent-1", timeline({ type: "assistant_message", text: "hel", model }));
+    coalescer.handle("agent-1", timeline({ type: "assistant_message", text: "lo", model }));
+    await vi.advanceTimersByTimeAsync(60);
+
+    expect(flushes).toEqual([
+      {
+        agentId: "agent-1",
+        item: { type: "assistant_message", text: "hello", model },
+        provider: "codex",
+      },
+    ]);
+  });
+
   test("leads again after an idle window", async () => {
     const { coalescer, flushes } = createHarness();
 

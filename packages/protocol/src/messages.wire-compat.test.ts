@@ -223,6 +223,31 @@ describe("wire schema compatibility", () => {
     });
   });
 
+  test("the answering model on an assistant message is optional and carried when present", () => {
+    const stamped = {
+      type: "assistant_message",
+      text: "answered",
+      model: { provider: "opencode", modelId: "claude-agent/opus", thinkingOptionId: "medium" },
+    };
+    expect(AgentTimelineItemPayloadSchema.parse(stamped)).toEqual(stamped);
+    expect(
+      AgentTimelineItemPayloadSchema.parse({
+        ...stamped,
+        model: { provider: "opencode", modelId: "deepseek/v4", thinkingOptionId: null },
+      }),
+    ).toMatchObject({ model: { thinkingOptionId: null } });
+    expect(
+      AgentTimelineItemPayloadSchema.parse({
+        ...stamped,
+        model: { provider: "opencode", modelId: "deepseek/v4" },
+      }),
+    ).toMatchObject({ model: { modelId: "deepseek/v4" } });
+    expect(
+      AgentTimelineItemPayloadSchema.safeParse({ ...stamped, model: { provider: "opencode" } })
+        .success,
+    ).toBe(false);
+  });
+
   test("task progress fields are optional on the wire", () => {
     expect(
       AgentTimelineItemPayloadSchema.parse({

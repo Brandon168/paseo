@@ -282,6 +282,11 @@ function mergeAssistantChunks(entries: readonly WorkingEntry[]): WorkingEntry[] 
         type: "assistant_message",
         text: `${previousAssistant.text}${entryAssistant.text}`,
         ...(previousAssistant.messageId ? { messageId: previousAssistant.messageId } : {}),
+        // The latest chunk's model wins, so a message that continues after a model switch
+        // names the model that finished it.
+        ...((entryAssistant.model ?? previousAssistant.model)
+          ? { model: entryAssistant.model ?? previousAssistant.model }
+          : {}),
       },
       timestamp: entry.timestamp,
       seqEnd: entry.seqEnd,

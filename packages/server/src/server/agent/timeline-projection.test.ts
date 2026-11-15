@@ -64,6 +64,38 @@ describe("projectTimelineRows", () => {
     });
   });
 
+  test("a merged assistant message keeps the model that answered", () => {
+    const first = { provider: "opencode", modelId: "route-a/first", thinkingOptionId: "low" };
+    const second = { provider: "opencode", modelId: "route-b/second", thinkingOptionId: "high" };
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        timestamp: "2026-02-13T00:00:00.000Z",
+        item: { type: "assistant_message", text: "Hel", messageId: "msg-1", model: first },
+      },
+      {
+        seq: 2,
+        timestamp: "2026-02-13T00:00:00.100Z",
+        item: { type: "assistant_message", text: "lo", messageId: "msg-1" },
+      },
+    ];
+
+    expect(projectTimelineRows({ rows, mode: "projected" })[0]?.item).toEqual({
+      type: "assistant_message",
+      text: "Hello",
+      messageId: "msg-1",
+      model: first,
+    });
+
+    const switched: AgentTimelineRow[] = [
+      rows[0],
+      { ...rows[1], item: { ...rows[1].item, model: second } as AgentTimelineRow["item"] },
+    ];
+    expect(projectTimelineRows({ rows: switched, mode: "projected" })[0]?.item).toMatchObject({
+      model: second,
+    });
+  });
+
   test("keeps adjacent assistant chunks with different message ids separate in projected mode", () => {
     const rows: AgentTimelineRow[] = [
       {
