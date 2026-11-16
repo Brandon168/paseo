@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { UsageSourceRegistry } from "./index.js";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -827,4 +827,92 @@ test("failed discovery preserves history until discovery confirms account remova
   expect(await registry.listReports()).toEqual([]);
   present = true;
   expect((await registry.listReports())[0]?.lastSuccessful).toBeUndefined();
+});
+
+function turnRefreshFixture() {
+  const fetched: string[] = [];
+  const registry = new UsageSourceRegistry(
+    () => Date.now(),
+    300_000,
+    { warn: () => {} },
+    {
+      hasAgent: (id) => id === "agent",
+      usageSession: () => ({ provider: "claude", sessionKey: "launch", env: { HOME: "/agent" } }),
+    },
+    20_000,
+    { debounceMs: 1_000, minIntervalMs: 90_000 },
+  );
+  registry.register(
+    source({
+      id: "claude",
+      discover: async () => [{ key: "work", input: "work" }],
+      fetch: async () => {
+        fetched.push(new Date().toISOString());
+        return { status: "available", windows: [] };
+      },
+    }),
+  );
+  const published: string[] = [];
+  return { registry, fetched, published };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+test("a finished turn refreshes its agent's reports at most once per interval and publishes them", async () => {
+  vi.useFakeTimers();
+  const { registry, fetched, published } = turnRefreshFixture();
+
+  // No one listens, so no turn fetches.
+  registry.refreshAfterTurn("agent");
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(fetched).toHaveLength(0);
+
+  registry.subscribeReports((entry) => published.push(entry.id));
+  registry.refreshAfterTurn("agent");
+  await vi.advanceTimersByTimeAsync(999);
+  expect(fetched).toHaveLength(0);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(fetched).toHaveLength(1);
+  expect(published).toEqual(["claude:work"]);
+
+  // Turns inside the interval share one fetch at its end instead of being dropped.
+  await vi.advanceTimersByTimeAsync(10_000);
+  registry.refreshAfterTurn("agent");
+  await vi.advanceTimersByTimeAsync(30_000);
+  registry.refreshAfterTurn("agent");
+  await vi.advanceTimersByTimeAsync(49_999);
+  expect(fetched).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(fetched).toHaveLength(2);
+  expect(published).toEqual(["claude:work", "claude:work"]);
+
+  // Idle agents fetch nothing.
+  await vi.advanceTimersByTimeAsync(30 * 60_000);
+  expect(fetched).toHaveLength(2);
+});
+
+test("a fetch since the turn ended answers it without another call", async () => {
+  vi.useFakeTimers();
+  const { registry, fetched, published } = turnRefreshFixture();
+  registry.subscribeReports((entry) => published.push(entry.id));
+  registry.refreshAfterTurn("agent");
+  await vi.advanceTimersByTimeAsync(0);
+  await registry.listReports({ forceRefresh: true });
+  expect(fetched).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(fetched).toHaveLength(1);
+  expect(published).toEqual(["claude:work"]);
+});
+
+test("the last listener leaving cancels a pending turn refresh", async () => {
+  vi.useFakeTimers();
+  const { registry, fetched } = turnRefreshFixture();
+  const unsubscribe = registry.subscribeReports(() => {});
+  registry.refreshAfterTurn("agent");
+  await vi.advanceTimersByTimeAsync(0);
+  unsubscribe();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(fetched).toHaveLength(0);
 });

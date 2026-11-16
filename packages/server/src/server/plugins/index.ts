@@ -15,6 +15,7 @@ import {
   type PluginUpdateProposal,
   type PluginUpdatePreview,
   type PluginUpdateResult,
+  type UsageReportEntry,
 } from "@getpaseo/protocol/messages";
 import { parsePluginSourceReference } from "@getpaseo/protocol/plugin-source-reference";
 import { assertPluginCompatibility } from "@getpaseo/protocol/plugin-requirements";
@@ -210,6 +211,14 @@ export class PluginService {
 
   listLegacyUsage() {
     return this.usageSources.listLegacyUsage();
+  }
+
+  subscribeUsageReports(listener: (report: UsageReportEntry) => void): () => void {
+    return this.usageSources.subscribeReports(listener);
+  }
+
+  refreshUsageAfterTurn(agentId: string): void {
+    this.usageSources.refreshAfterTurn(agentId);
   }
 
   subscribeProviderRegistrations(listener: () => void): () => void {

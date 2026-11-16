@@ -42,6 +42,20 @@ export interface ListUsageReportsOptions {
   onReport?: (report: UsageReportEntry) => void;
 }
 
+/** When a finished turn refreshes its agent's reports. */
+export interface TurnRefreshTiming {
+  /** Wait after a turn ends, so back-to-back turns share one fetch. */
+  debounceMs: number;
+  /** Never fetch one report more often than this, however many turns end. */
+  minIntervalMs: number;
+}
+
+interface PendingTurnRefresh {
+  timer: ReturnType<typeof setTimeout>;
+  /** The last turn this refresh has to cover. */
+  endedAt: number;
+}
+
 interface AgentReports {
   provider: string;
   model?: string;
@@ -58,6 +72,8 @@ export class UsageSourceRegistry {
   private readonly cache = new Map<string, { at: number; entry: UsageReportEntry }>();
   private readonly successful = new Map<string, NonNullable<UsageReportEntry["lastSuccessful"]>>();
   private readonly pending = new Map<string, Promise<UsageReportEntry>>();
+  private readonly reportListeners = new Set<(entry: UsageReportEntry) => void>();
+  private readonly turnRefreshes = new Map<string, PendingTurnRefresh>();
 
   constructor(
     private readonly now: () => number = Date.now,
@@ -65,7 +81,72 @@ export class UsageSourceRegistry {
     private readonly logger: Pick<Logger, "warn"> = { warn: console.warn },
     private readonly agents: AgentUsageLookup = { hasAgent: () => false, usageSession: () => null },
     private readonly deadlineMs = 20_000,
+    private readonly turnRefresh: TurnRefreshTiming = { debounceMs: 5_000, minIntervalMs: 90_000 },
   ) {}
+
+  /** Reports refreshed because an agent's turn ended. */
+  subscribeReports(listener: (entry: UsageReportEntry) => void): () => void {
+    this.reportListeners.add(listener);
+    return () => {
+      this.reportListeners.delete(listener);
+      if (this.reportListeners.size > 0) return;
+      for (const pending of this.turnRefreshes.values()) clearTimeout(pending.timer);
+      this.turnRefreshes.clear();
+    };
+  }
+
+  /**
+   * Refreshes the reports an agent runs under after its turn ends, and publishes them. Usage only
+   * moves while agents work, so this replaces polling. Vendors rate-limit their usage endpoints
+   * (Claude answers 429 with a Retry-After of tens of minutes), so turns are debounced and each
+   * report is fetched at most once per `minIntervalMs`; a turn inside that interval moves the
+   * fetch to its end instead of dropping it. Nothing is fetched while no one listens.
+   */
+  refreshAfterTurn(agentId: string): void {
+    if (this.reportListeners.size === 0) return;
+    const endedAt = this.now();
+    void this.discoverAgent(agentId)
+      .then((ids) => {
+        for (const id of new Set(ids)) this.scheduleTurnRefresh(id, endedAt);
+        return undefined;
+      })
+      .catch((error: unknown) => {
+        this.logger.warn({ agentId, err: error }, "Usage refresh after turn failed");
+      });
+  }
+
+  private scheduleTurnRefresh(id: string, endedAt: number): void {
+    if (this.reportListeners.size === 0) return;
+    const pending = this.turnRefreshes.get(id);
+    if (pending) {
+      pending.endedAt = Math.max(pending.endedAt, endedAt);
+      return;
+    }
+    const known = this.known.get(id);
+    if (!known) return;
+    const lastFetch = this.cache.get(cacheIdentity(id, known))?.at;
+    const earliest = lastFetch === undefined ? 0 : lastFetch + this.turnRefresh.minIntervalMs;
+    const delay = Math.max(this.turnRefresh.debounceMs, earliest - this.now());
+    const timer = setTimeout(() => this.runTurnRefresh(id), delay);
+    timer.unref?.();
+    this.turnRefreshes.set(id, { timer, endedAt });
+  }
+
+  private runTurnRefresh(id: string): void {
+    const pending = this.turnRefreshes.get(id);
+    this.turnRefreshes.delete(id);
+    // The host list fetches the merged login set, so refresh that identity: it is what the
+    // sidebar shows, and its cache answers the next poll.
+    const known = this.known.get(id);
+    if (!pending || !known || this.reportListeners.size === 0) return;
+    const cached = this.cache.get(cacheIdentity(id, known));
+    // A Refresh or poll since the last turn ended already has its usage.
+    const forceRefresh = !cached || cached.at < pending.endedAt;
+    void this.fetchId(id, known, forceRefresh).then((entry) => {
+      for (const listener of this.reportListeners) listener(entry);
+      return undefined;
+    });
+  }
 
   register(source: UsageSource): void {
     if (this.sources.has(source.id)) throw new Error(`Duplicate usage source: ${source.id}`);
@@ -85,6 +166,11 @@ export class UsageSourceRegistry {
     for (const key of this.successful.keys())
       if (key.startsWith(`${id}:`)) this.successful.delete(key);
     for (const key of this.pending.keys()) if (key.startsWith(`${id}:`)) this.pending.delete(key);
+    for (const [key, pending] of this.turnRefreshes) {
+      if (!key.startsWith(`${id}:`)) continue;
+      clearTimeout(pending.timer);
+      this.turnRefreshes.delete(key);
+    }
   }
 
   async listReports(options: ListUsageReportsOptions = {}): Promise<UsageReportEntry[]> {

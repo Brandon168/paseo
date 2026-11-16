@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { i18n } from "@/i18n/i18next";
 import {
+  applyPushedReport,
   resolveUsageReport,
   displayPercent,
   resolveAgentUsageView,
@@ -249,6 +250,30 @@ describe("upsertReport", () => {
   it("keeps a copy fetched after the streamed one, such as a Refresh that landed first", () => {
     const refreshed = { ...alpha, planLabel: "Refreshed", fetchedAt: "2026-01-01T00:05:00.000Z" };
     expect(upsertReport([refreshed, beta], alpha)).toEqual([refreshed, beta]);
+  });
+});
+
+describe("applyPushedReport", () => {
+  const alpha = entry({ sourceId: "alpha", planLabel: "Old" });
+  const beta = entry({ sourceId: "beta" });
+
+  it("replaces the pushed report in place", () => {
+    const pushed = {
+      ...entry({ sourceId: "alpha", planLabel: "New" }),
+      fetchedAt: "2026-01-01T00:05:00.000Z",
+    };
+    expect(applyPushedReport([alpha, beta], pushed)).toEqual([pushed, beta]);
+  });
+
+  it("leaves a list without the report, or no list, as it is", () => {
+    const list = [beta];
+    expect(applyPushedReport(list, alpha)).toBe(list);
+    expect(applyPushedReport(undefined, alpha)).toBeUndefined();
+  });
+
+  it("keeps a copy fetched after the pushed one", () => {
+    const refreshed = { ...alpha, fetchedAt: "2026-01-01T00:05:00.000Z" };
+    expect(applyPushedReport([refreshed], alpha)).toEqual([refreshed]);
   });
 });
 

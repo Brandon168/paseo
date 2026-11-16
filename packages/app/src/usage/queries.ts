@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { supportsUsageReports } from "@getpaseo/client/internal/daemon-client";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   skipToken,
   useMutation,
@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-query";
 import { useShallow } from "zustand/shallow";
 import { useFetchQuery } from "@/data/query";
+import { useHostFeature } from "@/runtime/host-features";
 import {
   getHostRuntimeStore,
   useHostRuntimeConnectionStatuses,
@@ -20,6 +21,7 @@ import { useSessionStore, type SessionState } from "@/stores/session-store";
 import { useUsageSetting } from "./setting";
 import { usageCopy } from "./copy";
 import {
+  applyPushedReport,
   replaceReport,
   resolveAgentUsageView,
   resolveUsageRefresh,
@@ -37,6 +39,8 @@ import type { UsageReportEntry, UsageView } from "./types";
 // An explicit refresh passes `forceRefresh` to bypass that cache.
 const REPORTS_STALE_TIME_MS = 60_000;
 const REPORTS_REFETCH_INTERVAL_MS = 5 * 60_000;
+// A host that pushes the reports it refreshes after each agent turn needs polling only as a backstop.
+const PUSHED_REPORTS_REFETCH_INTERVAL_MS = 10 * 60_000;
 
 /** Every report list of a host: its own and each agent's. */
 function hostUsageQueryKey(serverId: string) {
@@ -178,6 +182,40 @@ interface UsageHostReportsInput {
   shouldPoll?: boolean;
 }
 
+/**
+ * Writes each report the host refreshes on its own into every usage list of that host that shows
+ * it. Returns whether the host pushes them.
+ */
+function useUsageReportUpdates(serverId: string | null, enabled: boolean): boolean {
+  const queryClient = useQueryClient();
+  const isConnected = useHostRuntimeIsConnected(serverId ?? "");
+  const isSupported = useHostFeature(serverId, "usageReportUpdates");
+  const active = enabled && serverId !== null && isConnected && isSupported;
+  useEffect(() => {
+    if (!active || serverId === null) return;
+    const client = getHostRuntimeStore().getClient(serverId);
+    if (!client) return;
+    const observation = client.observeUsageReports();
+    observation.subscribe({
+      snapshot: () => {},
+      update: (message) => {
+        if (message.type !== "usage.report.update") return;
+        queryClient.setQueriesData<UsageReportEntry[]>(
+          { queryKey: hostUsageQueryKey(serverId) },
+          (reports) => applyPushedReport(reports, message.payload.report),
+        );
+      },
+      error: (error) => console.warn("[Usage] Report updates failed", error),
+    });
+    return () => {
+      void observation
+        .release()
+        .catch((error: unknown) => console.warn("[Usage] Report updates cleanup failed", error));
+    };
+  }, [active, queryClient, serverId]);
+  return active;
+}
+
 /** A host's reports, with periodic refresh enabled only by the visible sidebar summary. */
 export function useUsageHostReports({
   serverId,
@@ -185,13 +223,17 @@ export function useUsageHostReports({
 }: UsageHostReportsInput): UsageReportEntry[] {
   const setting = useUsageSetting(serverId);
   const queryClient = useQueryClient();
+  const isPushed = useUsageReportUpdates(serverId, shouldPoll && setting.enabled);
+  const refetchIntervalMs = isPushed
+    ? PUSHED_REPORTS_REFETCH_INTERVAL_MS
+    : REPORTS_REFETCH_INTERVAL_MS;
   const query = useFetchQuery({
     enabled: setting.enabled,
     queryKey: usageReportsQueryKey(serverId ?? ""),
     queryFn: serverId ? () => listReports(queryClient, serverId) : skipToken,
     dataShape: "list",
     staleTimeMs: REPORTS_STALE_TIME_MS,
-    refetchInterval: shouldPoll ? REPORTS_REFETCH_INTERVAL_MS : false,
+    refetchInterval: shouldPoll && refetchIntervalMs,
   });
   return setting.enabled ? (query.data ?? NO_REPORTS) : NO_REPORTS;
 }

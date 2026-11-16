@@ -78,6 +78,18 @@ export function upsertReport(
 }
 
 /**
+ * A report list with a report the host pushed in place of its previous copy. A list without the
+ * report stays as it is: each list holds the reports of its own scope, and the push names none.
+ */
+export function applyPushedReport(
+  reports: UsageReportEntry[] | undefined,
+  report: UsageReportEntry,
+): UsageReportEntry[] | undefined {
+  if (!reports?.some((entry) => entry.id === report.id)) return reports;
+  return upsertReport(reports, report);
+}
+
+/**
  * Keep displayed reports in place: the finished list is in fetch-completion order, which can
  * change on every refresh. Drop missing reports, append new ones, and keep newer fetched copies.
  */

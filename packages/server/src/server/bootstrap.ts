@@ -1045,6 +1045,17 @@ export async function createPaseoDaemon(
   const unsubscribePluginSessionChanges = pluginRuntime.subscribeSessionOpenChanges(() => {
     agentManager.invalidatePluginSessions();
   });
+  // Plan usage moves only while agents work, so a finished turn refreshes it instead of a timer.
+  const unsubscribeUsageTurnRefresh = agentManager.subscribe(
+    (event) => {
+      if (
+        event.type === "agent_stream" &&
+        (event.event.type === "turn_completed" || event.event.type === "turn_failed")
+      )
+        pluginRuntime.refreshUsageAfterTurn(event.agentId);
+    },
+    { replayState: false, includeInternal: true },
+  );
 
   const detachAgentStoragePersistence = attachAgentStoragePersistence(
     logger,
@@ -1968,6 +1979,7 @@ export async function createPaseoDaemon(
       await deleteLocalCredential(config.paseoHome);
       unsubscribePluginProviders();
       unsubscribePluginSessionChanges();
+      unsubscribeUsageTurnRefresh();
       await pluginRuntime.stopAllPlugins().catch(() => undefined);
       await serviceProxy.stopStandalone().catch(() => undefined);
       await agentProviderRuntime.shutdown().catch(() => undefined);
@@ -1990,6 +2002,7 @@ export async function createPaseoDaemon(
     // they serve has been closed, further down.
     unsubscribePluginProviders();
     unsubscribePluginSessionChanges();
+    unsubscribeUsageTurnRefresh();
     await hubRelationships.stop();
     workspaceReconciliation.dispose();
     scriptHealthMonitor.stop();

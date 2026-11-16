@@ -565,6 +565,7 @@ export interface SessionOptions {
       reportIds?: string[];
     }): Promise<UsageReportEntry[]>;
     listLegacyUsage(): Promise<{ fetchedAt: string; providers: ProviderUsage[] }>;
+    subscribeUsageReports?(listener: (report: UsageReportEntry) => void): () => void;
   };
   orchestrationSkills?: import("./orchestration-skills/index.js").OrchestrationSkills;
   mcpBaseUrl?: string | null;
@@ -810,6 +811,7 @@ export class Session {
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeProjectMutations: (() => void) | null = null;
   private unsubscribePluginChanges: (() => void) | null = null;
+  private unsubscribeUsageReports: (() => void) | null = null;
   private unsubscribeWorkspaceMutations: (() => void) | null = null;
   private registryMutationQueue: Promise<void> = Promise.resolve();
   private projectUpdateQueue: Promise<void> = Promise.resolve();
@@ -1161,6 +1163,7 @@ export class Session {
           this.unsubscribeProjectMutations,
           this.unsubscribeWorkspaceMutations,
           this.unsubscribePluginChanges,
+          this.unsubscribeUsageReports,
           this.unsubscribeTerminalWorkspaceContributionEvents,
           this.providerCatalogSession.isObserving,
           this.hubExecutionController?.isObserving,
@@ -1908,6 +1911,16 @@ export class Session {
     else {
       this.unsubscribePluginChanges?.();
       this.unsubscribePluginChanges = null;
+    }
+    if (this.wantsEvent("usage.report.update"))
+      this.unsubscribeUsageReports ??=
+        this.pluginRuntime?.subscribeUsageReports?.((report) => {
+          if (this.daemonConfigStore.get().usage?.enabled === false) return;
+          this.emit({ type: "usage.report.update", payload: { report } });
+        }) ?? null;
+    else {
+      this.unsubscribeUsageReports?.();
+      this.unsubscribeUsageReports = null;
     }
   }
 
@@ -9408,6 +9421,8 @@ export class Session {
     this.unsubscribeProjectMutations = null;
     this.unsubscribePluginChanges?.();
     this.unsubscribePluginChanges = null;
+    this.unsubscribeUsageReports?.();
+    this.unsubscribeUsageReports = null;
     this.unsubscribeWorkspaceMutations?.();
     this.unsubscribeWorkspaceMutations = null;
     this.agentUpdates.dispose();
@@ -9493,20 +9508,25 @@ function sessionEventCategory(message: SessionOutboundMessage): SessionEventSubs
     case "activity_log":
     case "hub.execution.agent.update":
     case "hub.execution.agent.stream":
+    case "usage.report.update":
       return message.type;
     case "status":
-      switch (message.payload.status) {
-        case "server_info":
-          return "status.server_info";
-        case "daemon_config_changed":
-          return "status.daemon_config_changed";
-        case "plugin_catalog_changed":
-          return "status.plugin_catalog_changed";
-        case "plugin_settings_changed":
-          return "status.plugin_settings_changed";
-        default:
-          return null;
-      }
+      return statusEventCategory(message.payload.status);
+    default:
+      return null;
+  }
+}
+
+function statusEventCategory(status: string): SessionEventSubscription | null {
+  switch (status) {
+    case "server_info":
+      return "status.server_info";
+    case "daemon_config_changed":
+      return "status.daemon_config_changed";
+    case "plugin_catalog_changed":
+      return "status.plugin_catalog_changed";
+    case "plugin_settings_changed":
+      return "status.plugin_settings_changed";
     default:
       return null;
   }
@@ -9529,6 +9549,7 @@ function legacyWantsEvent(
       return capabilities.has(CLIENT_CAPS.providerSubagents);
     // Old apps parse outbound messages strictly and do not know this type.
     case "agent.background_work.update":
+    case "usage.report.update":
       return false;
     default:
       return true;

@@ -3170,6 +3170,8 @@ export const SessionEventSubscriptionSchema = z.enum([
   "activity_log",
   "hub.execution.agent.update",
   "hub.execution.agent.stream",
+  // COMPAT(usageReportUpdates): added in v0.16.0; subscribe only when server_info.features.usageReportUpdates.
+  "usage.report.update",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -3631,6 +3633,8 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(usageSetting): added in v0.14, remove after 2027-05-01.
         usageSetting: z.boolean().optional(),
         usageSources: z.boolean().optional(),
+        // COMPAT(usageReportUpdates): added in v0.16.0, remove gate after 2027-05-16.
+        usageReportUpdates: z.boolean().optional(),
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
         providersSnapshotCwd: z.boolean().optional(),
         // COMPAT(directorySync): added in v0.3.x, remove gate after 2027-02-12.
@@ -6551,6 +6555,12 @@ export const UsageListReportsUpdateMessageSchema = z.object({
   type: z.literal("usage.list_reports.update"),
   payload: z.object({ requestId: z.string(), report: UsageReportEntrySchema }),
 });
+// Event push delivered through session.events.set_subscription; it has no .request/.response pair.
+// The daemon sends a report it refreshed on its own, after an agent's turn ended.
+export const UsageReportUpdateMessageSchema = z.object({
+  type: z.literal("usage.report.update"),
+  payload: z.object({ subscriptionId: z.string().optional(), report: UsageReportEntrySchema }),
+});
 export const UsageListReportsResponseMessageSchema = z.object({
   type: z.literal("usage.list_reports.response"),
   payload: z.object({ requestId: z.string(), error: z.string().nullable() }),
@@ -7252,6 +7262,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProviderDiagnosticResponseMessageSchema,
   ProviderUsageListResponseMessageSchema,
   UsageListReportsUpdateMessageSchema,
+  UsageReportUpdateMessageSchema,
   UsageListReportsResponseMessageSchema,
   ListCommandsResponseSchema,
   ListTerminalsResponseSchema,

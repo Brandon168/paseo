@@ -2018,6 +2018,7 @@ export class VoiceAssistantWebSocketServer {
         relayProtectedSecurity: true,
         usageSetting: true,
         usageSources: true,
+        usageReportUpdates: true,
         ownedSubscriptions: true,
         providerOptionControls: true,
         entityMetadata: true,

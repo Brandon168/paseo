@@ -4249,6 +4249,17 @@ export class DaemonClient {
     if (payload.error) throw new Error(payload.error);
   }
 
+  /** Reports the host refreshes on its own, after an agent's turn ends. */
+  observeUsageReports(
+    options: { signal?: AbortSignal } = {},
+  ): OwnedSubscription<CorrelatedResponsePayload<"session.events.set_subscription.response">> {
+    // COMPAT(usageReportUpdates): added in v0.16.0, remove gate after 2027-05-16.
+    if (this.lastServerInfoMessage?.features?.usageReportUpdates !== true) {
+      throw new Error("Update the host to see usage as it changes.");
+    }
+    return this.observeEvents(["usage.report.update"], options);
+  }
+
   observeAgentBackgroundWork(
     options: { signal?: AbortSignal } = {},
   ): OwnedSubscription<CorrelatedResponsePayload<"session.events.set_subscription.response">> {
