@@ -4,6 +4,7 @@ const pkg = require("./package.json");
 const withAndroidAsyncStorageSize = require("./plugins/with-android-async-storage-size");
 const withAndroidOptionalCamera = require("./plugins/with-android-optional-camera");
 const withAndroidProfileable = require("./plugins/with-android-profileable");
+const withAndroidQuickActions = require("./plugins/with-android-quick-actions");
 const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
@@ -112,6 +113,14 @@ export default {
       infoPlist: {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
+        // Long-pressing the app icon offers New Workspace; handled by modules/paseo-quick-actions.
+        UIApplicationShortcutItems: [
+          {
+            UIApplicationShortcutItemType: "new-workspace",
+            UIApplicationShortcutItemTitle: "New Workspace",
+            UIApplicationShortcutItemIconSymbolName: "plus",
+          },
+        ],
       },
       bundleIdentifier: variant.packageId,
       ...(variant.googleServiceInfoPlist
@@ -149,6 +158,7 @@ export default {
       [withAndroidAsyncStorageSize, 64],
       ...buildProfile.cameraPlugins,
       withAndroidOptionalCamera,
+      withAndroidQuickActions,
       [
         "expo-splash-screen",
         {

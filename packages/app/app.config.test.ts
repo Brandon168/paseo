@@ -95,6 +95,99 @@ it("allows all orientations on iPhone and iPad", async () => {
   }
 }, 30_000);
 
+describe("home screen quick actions", () => {
+  const quickActions = require("./plugins/with-android-quick-actions");
+
+  it("writes a New Workspace shortcut that opens the app's paseo:// link", () => {
+    const xml = quickActions.buildShortcutsXml("sh.paseo");
+    expect(xml).toContain('android:shortcutId="new-workspace"');
+    expect(xml).toContain('android:shortcutShortLabel="New Workspace"');
+    expect(xml).toContain('android:action="android.intent.action.VIEW"');
+    expect(xml).toContain('android:data="paseo://new"');
+    expect(xml).toContain('android:targetClass="sh.paseo.MainActivity"');
+  });
+
+  it("targets the package it is built for, so the debug build opens its own activity", () => {
+    const xml = quickActions.buildShortcutsXml("sh.paseo.debug");
+    expect(xml).toContain('android:targetPackage="sh.paseo.debug"');
+    expect(xml).toContain('android:targetClass="sh.paseo.debug.MainActivity"');
+  });
+
+  it("declares the shortcuts resource on the launcher activity once", () => {
+    interface ActivityEntry {
+      $: Record<string, string>;
+      "meta-data"?: ManifestEntry[];
+    }
+    const manifest: { manifest: { application: { activity: ActivityEntry[] }[] } } = {
+      manifest: {
+        application: [
+          {
+            activity: [
+              { $: { "android:name": ".OtherActivity" } },
+              { $: { "android:name": ".MainActivity" } },
+            ],
+          },
+        ],
+      },
+    };
+    quickActions.addShortcutsMetaData(manifest);
+    quickActions.addShortcutsMetaData(manifest);
+    const [other, launcher] = manifest.manifest.application[0].activity;
+    expect(launcher["meta-data"]).toEqual([
+      { $: { "android:name": "android.app.shortcuts", "android:resource": "@xml/shortcuts" } },
+    ]);
+    expect(other["meta-data"]).toBeUndefined();
+  });
+
+  it("fails loudly when the launcher activity is missing", () => {
+    expect(() =>
+      quickActions.addShortcutsMetaData({ manifest: { application: [{ activity: [] }] } }),
+    ).toThrow(/launcher activity/);
+  });
+
+  it("offers New Workspace from the Android launcher icon and opens the paseo:// link", async () => {
+    const manifest = await resolveAndroidManifest();
+    const launcher = manifest.application[0].activity.find(
+      (entry: ManifestEntry) => entry.$["android:name"] === ".MainActivity",
+    );
+    expect(launcher["meta-data"]).toEqual(
+      expect.arrayContaining([
+        { $: { "android:name": "android.app.shortcuts", "android:resource": "@xml/shortcuts" } },
+      ]),
+    );
+    const schemes = (launcher["intent-filter"] ?? [])
+      .flatMap((filter: { data?: ManifestEntry[] }) => filter.data ?? [])
+      .map((data: ManifestEntry) => data.$["android:scheme"]);
+    expect(schemes).toContain("paseo");
+  }, 30_000);
+
+  it("offers New Workspace from the iPhone app icon", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = await mkdtemp(join(tmpdir(), "paseo-ios-quick-actions-"));
+    try {
+      const { exp } = await getPrebuildConfigAsync(__dirname, { platforms: ["ios"] });
+      await compileModsAsync(exp, {
+        projectRoot: root,
+        introspect: true,
+        platforms: ["ios"],
+        assertMissingModProviders: false,
+      });
+      const plist = exp._internal.modResults.ios.infoPlist;
+      expect(plist.UIApplicationShortcutItems).toEqual([
+        {
+          UIApplicationShortcutItemType: "new-workspace",
+          UIApplicationShortcutItemTitle: "New Workspace",
+          UIApplicationShortcutItemIconSymbolName: "plus",
+        },
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
 // Scene startup is the integration boundary for the iOS keyboard window.
 describe("hardware keyboard scene integration", () => {
   it("installs observation after Expo creates the scene window and is idempotent", () => {

@@ -144,6 +144,7 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { QuickActionRouter } from "@/quick-actions/react";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 
 polyfillCrypto();
@@ -925,10 +926,16 @@ function NotificationOpenBridge() {
   return <NotificationOpenRouter startupBlocked={startupBlocker.kind !== "none"} />;
 }
 
+function QuickActionBridge() {
+  const { startupBlocker } = useHostRuntimeBootstrapState();
+  return <QuickActionRouter startupBlocked={startupBlocker.kind !== "none"} />;
+}
+
 function RuntimeProviders({ children }: { children: ReactNode }) {
   return (
     <HostRuntimeBootstrapProvider>
       <NotificationOpenBridge />
+      <QuickActionBridge />
       <SidebarCalloutProvider>
         <ProvidersWrapper>{children}</ProvidersWrapper>
       </SidebarCalloutProvider>
