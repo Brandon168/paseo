@@ -70,6 +70,18 @@ function requireClient(serverId: string) {
 }
 
 /**
+ * Writes a freshly fetched report into every usage list of its host that already shows it, so
+ * the sidebar, the host page and each agent's details agree on one account's numbers. Lists
+ * without the report keep their own scope; an older copy never replaces a newer one.
+ */
+function shareReport(queryClient: QueryClient, serverId: string, report: UsageReportEntry): void {
+  queryClient.setQueriesData<UsageReportEntry[]>(
+    { queryKey: hostUsageQueryKey(serverId) },
+    (reports) => applyPushedReport(reports, report),
+  );
+}
+
+/**
  * Lists a host's reports, or one agent's, writing each into `queryKey` as it streams in so a slow
  * source never holds back the others. The finished list then replaces the streamed one, dropping
  * any report the host no longer has, but never a report refreshed while the list streamed.
@@ -91,6 +103,8 @@ async function streamReports(input: {
       queryClient.setQueryData<UsageReportEntry[]>(queryKey, (current) =>
         upsertReport(current, report),
       );
+      // An agent's details fetch afresh on every open; the sidebar should not lag behind them.
+      if (agentId !== undefined) shareReport(queryClient, serverId, report);
     },
   );
   return settleReports(queryClient.getQueryData<UsageReportEntry[]>(queryKey), reports);
@@ -200,10 +214,7 @@ function useUsageReportUpdates(serverId: string | null, enabled: boolean): boole
       snapshot: () => {},
       update: (message) => {
         if (message.type !== "usage.report.update") return;
-        queryClient.setQueriesData<UsageReportEntry[]>(
-          { queryKey: hostUsageQueryKey(serverId) },
-          (reports) => applyPushedReport(reports, message.payload.report),
-        );
+        shareReport(queryClient, serverId, message.payload.report);
       },
       error: (error) => console.warn("[Usage] Report updates failed", error),
     });
@@ -316,6 +327,7 @@ export function useReportRefresh(
           : agentUsageQueryKey(serverId, agentId, usageScopeKey),
         (reports) => (reports ? replaceReport(reports, reportId, report) : reports),
       );
+      if (report) shareReport(queryClient, serverId, report);
     },
   });
   const { mutate } = mutation;
