@@ -117,6 +117,13 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Why:** Personal sideloaded iOS build, signed with a personal certificate rather than an App Store profile.
 - **Notes:** `.github/workflows/ios-unsigned-personal.yml` in this fork.
 
+### New Workspace from the app icon
+
+- **Status:** fork-only
+- **Commits:** `f6ccbeb8a`
+- **Why:** Long-pressing the app icon should start a new workspace without opening the app first.
+- **Notes:** iOS adds a static home screen quick action and a small local module (`packages/app/modules/paseo-quick-actions`) that keeps the chosen action through a cold start. Android adds a launcher shortcut that opens `paseo://new` (`packages/app/plugins/with-android-quick-actions.js`). Both need a native build: a JS-only update won't add the option. `expo-quick-actions` 6.0.2 was not used: it targets Expo SDK 54 and drops the action on a cold start in this app's scene-based iOS lifecycle.
+
 ### Voice mode entry points in empty chats
 
 - **Status:** fork-only
