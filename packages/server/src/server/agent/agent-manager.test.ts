@@ -13569,6 +13569,59 @@ test("idle cleanup rechecks new prompt activity after an asynchronous safety pro
   expect(h.closes).toBe(0);
 });
 
+test("idle cleanup counts the first sighting of a resumed runtime as activity", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const h = idleCleanupHarness();
+  await h.create();
+  h.probes[0] = async () => true;
+  const start = Date.now();
+  const at = (minutes: number) => new Date(start + minutes * 60_000);
+  // The agent record is old (as after a daemon restart), but the runtime was only just loaded.
+  vi.setSystemTime(at(90));
+  expect((await h.sweep({ now: at(91) })).collected).toEqual([]);
+  expect(h.closes).toBe(0);
+  expect((await h.sweep({ now: at(151) })).collected).toHaveLength(1);
+  expect(h.closes).toBe(1);
+});
+
+test("idle cleanup counts a client opening or watching an agent as activity", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const h = idleCleanupHarness();
+  const agent = await h.create();
+  h.probes[0] = async () => true;
+  const start = Date.now();
+  const at = (minutes: number) => new Date(start + minutes * 60_000);
+  vi.setSystemTime(at(30));
+  h.manager.markRuntimeAccessed(agent.id);
+  expect((await h.sweep({ now: at(61) })).collected).toEqual([]);
+  expect(h.closes).toBe(0);
+  expect((await h.sweep({ now: at(91) })).collected).toHaveLength(1);
+});
+
+test("an access during the safety probe keeps the runtime", async () => {
+  const h = idleCleanupHarness();
+  const agent = await h.create();
+  const entered = deferred<void>();
+  const probe = deferred<boolean>();
+  h.probes[0] = () => {
+    entered.resolve();
+    return probe.promise;
+  };
+  const sweep = h.sweep({ now: h.later(61) });
+  await entered.promise;
+  await new Promise<void>((resolve) => setTimeout(resolve, 2));
+  h.manager.markRuntimeAccessed(agent.id);
+  probe.resolve(true);
+  expect((await sweep).collected).toEqual([]);
+  expect(h.closes).toBe(0);
+});
+
 test("idle cleanup retains a parent whose idle managed child owns background work", async () => {
   const h = idleCleanupHarness();
   const parent = await h.create();

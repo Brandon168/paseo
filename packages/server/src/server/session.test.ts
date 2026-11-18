@@ -473,6 +473,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
       listAgents: vi.fn(() => []),
       listProviderSubagentActivity: vi.fn(() => []),
       getAgentBackgroundWorkSummary: () => undefined,
+      markRuntimeAccessed: vi.fn(),
       subscribe: vi.fn(() => () => {}),
       ...options.agentManager,
     }),
@@ -5523,6 +5524,23 @@ test("replaces a capable session's complete viewed timeline set", async () => {
       },
     },
   ]);
+});
+
+test("a timeline subscription counts as access and marks the agent as viewed", async () => {
+  const markRuntimeAccessed = vi.fn();
+  const session = createSessionForTest({ agentManager: { markRuntimeAccessed } });
+  session.updateClientCapabilities({ selective_agent_timeline: true });
+  expect(session.hasTimelineSubscriber("agent-a")).toBe(false);
+
+  await session.handleMessage({
+    type: "agent.timeline.set_subscription.request",
+    agentIds: ["agent-a"],
+    requestId: "timeline-subscription-access",
+  });
+
+  expect(markRuntimeAccessed).toHaveBeenCalledWith("agent-a");
+  expect(session.hasTimelineSubscriber("agent-a")).toBe(true);
+  expect(session.hasTimelineSubscriber("agent-b")).toBe(false);
 });
 
 test("acknowledges a timeline subscription only to its socket source", async () => {

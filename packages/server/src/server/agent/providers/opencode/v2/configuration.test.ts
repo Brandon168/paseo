@@ -36,6 +36,22 @@ describe("OpenCode v2 helper isolation", () => {
     ).toBe(false);
   });
 
+  test("shares the helper for per-chat thread storage, which is applied per session", () => {
+    expect(
+      requiresDedicatedV2Server(
+        { provider: "opencode", cwd: "/tmp/project" },
+        {
+          agentId: "agent",
+          env: {
+            PASEO_AGENT_ID: "agent",
+            BB_THREAD_STORAGE: "/tmp/threads/agent",
+            PASEO_THREAD_STORAGE: "/tmp/threads/agent",
+          },
+        },
+      ),
+    ).toBe(false);
+  });
+
   test("dedicates a helper for any other process environment", () => {
     expect(
       requiresDedicatedV2Server(

@@ -1466,6 +1466,7 @@ export class Session {
     const agentIds = [...new Set(msg.agentIds)].sort();
     // Attach before comparing: a row appended after the comparison reaches this owner live.
     const owner = this.subscribeAgentTimelines(agentIds);
+    for (const agentId of agentIds) this.agentManager.markRuntimeAccessed(agentId);
     const freshness = msg.cursors ? await this.answerTimelineFreshness(agentIds, msg.cursors) : {};
     this.emitForSource(
       {
@@ -1479,6 +1480,14 @@ export class Session {
       },
       source,
     );
+  }
+
+  /** True while a client is subscribed to this agent's timeline (it is open on screen). */
+  hasTimelineSubscriber(agentId: string): boolean {
+    for (const subscription of this.timelineSubscriptions.values()) {
+      if (subscription.agentIds.has(agentId)) return true;
+    }
+    return false;
   }
 
   private subscribeAgentTimelines(agentIds: string[]): OwnedSubscription {
@@ -8419,6 +8428,7 @@ export class Session {
         logger: this.sessionLogger,
         purpose: "history",
       });
+      this.agentManager.markRuntimeAccessed(msg.agentId);
       const agentPayload = await this.buildAgentPayload(snapshot);
 
       const fetchedControlTimeline = this.agentManager.fetchTimeline(msg.agentId, {

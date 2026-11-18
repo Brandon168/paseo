@@ -856,6 +856,9 @@ export class AgentManager {
   private readonly historySessions = new WeakSet<AgentSession>();
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly runtimeCleanupIdentities = new WeakMap<AgentSession, object>();
+  // When a client last opened or watched a runtime. Kept apart from `updatedAt`, which orders
+  // session lists, so looking at a chat doesn't make it look recently active.
+  private readonly runtimeAccessedAt = new WeakMap<AgentSession, number>();
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
@@ -2059,6 +2062,12 @@ export class AgentManager {
     });
   }
 
+  /** Counts opening or watching a loaded agent as activity for the idle runtime cleaner. */
+  markRuntimeAccessed(agentId: string): void {
+    const agent = this.agents.get(agentId);
+    if (agent) this.runtimeAccessedAt.set(agent.session, Date.now());
+  }
+
   /** Capture runtime capabilities without handing lifecycle ownership to the collector. */
   getRuntimeCleanupCandidates(): RuntimeCleanupCandidate[] {
     if (!this.registry) return [];
@@ -2070,9 +2079,17 @@ export class AgentManager {
         identity = Object.freeze({});
         this.runtimeCleanupIdentities.set(agent.session, identity);
       }
+      // A runtime resumed from storage carries its old `updatedAt`; its first sighting counts as
+      // access so a chat that was just opened isn't unloaded within one sweep.
+      let accessedAt = this.runtimeAccessedAt.get(agent.session);
+      if (accessedAt === undefined) {
+        accessedAt = Date.now();
+        this.runtimeAccessedAt.set(agent.session, accessedAt);
+      }
       const isEligible = () =>
         this.agents.get(agent.id) === agent &&
         agent.updatedAt === updatedAt &&
+        this.runtimeAccessedAt.get(agent.session) === accessedAt &&
         this.runtimeHasNoPendingWork(agent);
       candidates.push({
         identity,
@@ -2080,7 +2097,7 @@ export class AgentManager {
         parentAgentId: getParentAgentIdFromLabels(agent.labels) ?? undefined,
         provider: agent.provider,
         sessionId: agent.persistence?.sessionId ?? null,
-        lastActivityAt: updatedAt.getTime(),
+        lastActivityAt: Math.max(updatedAt.getTime(), accessedAt),
         isEligible,
         canStopRuntime: agent.session.canStopRuntime?.bind(agent.session),
         closeIfEligible: async (revalidate) => {

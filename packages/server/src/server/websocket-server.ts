@@ -593,6 +593,18 @@ export class VoiceAssistantWebSocketServer {
   toolHosts() {
     return createToolHosts(this.connectedHosts);
   }
+
+  /** True while any connected client has this agent's timeline open. */
+  hasTimelineSubscriber(agentId: string): boolean {
+    const connections = new Set<SessionConnection>([
+      ...this.sessions.values(),
+      ...this.externalSessionsByKey.values(),
+    ]);
+    for (const connection of connections) {
+      if (connection.session.hasTimelineSubscriber(agentId)) return true;
+    }
+    return false;
+  }
   private readonly passwordHash: string | undefined;
   private readonly credentialSource: DaemonAuthConfig | undefined;
   private readonly worktreesRoot: string | undefined;

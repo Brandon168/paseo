@@ -1534,7 +1534,9 @@ export async function createPaseoDaemon(
     runtimes: () => agentManager.getRuntimeCleanupCandidates(),
     isProtected: (agentId) =>
       finishSubscriptions.hasPendingForCaller(agentId) ||
-      (wsServer?.agentMessages.hasPending(agentId) ?? false),
+      (wsServer?.agentMessages.hasPending(agentId) ?? false) ||
+      // A chat open on screen keeps its runtime, so it isn't unloaded while being read.
+      (wsServer?.hasTimelineSubscriber(agentId) ?? false),
     logger,
   });
 
