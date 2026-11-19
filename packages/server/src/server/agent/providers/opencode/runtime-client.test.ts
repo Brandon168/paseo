@@ -352,3 +352,41 @@ test("keeps native Paseo tools available when an external server is configured",
     await local.shutdown();
   }
 });
+
+// `opencode auth list` on OpenCode 2 starts the background `opencode serve --service`, which
+// resumes every running session and gives live chats a second runner (anomalyco/opencode#51213).
+test.each([
+  ["opencode v2.3.2", false],
+  ["1.14.46", true],
+])("runs the auth check in the diagnostic only on OpenCode 1 (%s)", async (version, runsAuth) => {
+  const { mkdtemp, writeFile, rm, access } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { OpenCodeRuntimeClient } = await import("./runtime-client.js");
+  const { createTestLogger } = await import("../../../../test-utils/test-logger.js");
+  const root = await mkdtemp(join(tmpdir(), "opencode-diagnostic-auth-"));
+  const script = join(root, "opencode.cjs");
+  const marker = join(root, "auth-ran");
+  await writeFile(
+    script,
+    `const fs = require("node:fs");
+if (process.argv.includes("auth")) { fs.writeFileSync(${JSON.stringify(marker)}, ""); console.log("none"); }
+else console.log(${JSON.stringify(version)});`,
+  );
+  const client = new OpenCodeRuntimeClient(createTestLogger(), {
+    command: { mode: "replace", argv: [process.execPath, script] },
+    env: { XDG_STATE_HOME: root },
+  });
+  try {
+    const { diagnostic } = await client.getDiagnostic();
+    const ran = await access(marker).then(
+      () => true,
+      () => false,
+    );
+    expect(ran).toBe(runsAuth);
+    if (!runsAuth) expect(diagnostic).toContain("starts its background service");
+  } finally {
+    await client.shutdown();
+    await rm(root, { recursive: true, force: true });
+  }
+});

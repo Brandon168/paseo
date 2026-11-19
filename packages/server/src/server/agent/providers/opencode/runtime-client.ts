@@ -135,7 +135,12 @@ export class OpenCodeRuntimeClient implements AgentClient {
     const selection = await this.selectService();
     if (selection.kind !== "owned")
       return { diagnostic: `OpenCode server: ${selection.server.url}` };
-    return this.legacy.getDiagnostic();
+    // OpenCode 2 CLI commands such as `opencode auth list` start the background
+    // `opencode serve --service` when none is running. A starting service resumes every
+    // session marked running, so a chat that is live on Paseo's own helper server gets a
+    // second runner (anomalyco/opencode#51213). Only OpenCode 1 gets the auth check.
+    const client = await this.client().catch(() => undefined);
+    return this.legacy.getDiagnostic({ checkAuth: client === this.legacy });
   }
   async createSession(
     config: AgentSessionConfig,

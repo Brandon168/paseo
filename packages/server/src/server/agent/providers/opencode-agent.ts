@@ -1807,7 +1807,7 @@ export class OpenCodeAgentClient implements AgentClient {
     await this.serverManager.shutdown();
   }
 
-  async getDiagnostic(): Promise<{ diagnostic: string }> {
+  async getDiagnostic(options: { checkAuth?: boolean } = {}): Promise<{ diagnostic: string }> {
     try {
       const launch = await resolveProviderLaunch({
         commandConfig: this.runtimeSettings?.command,
@@ -1815,10 +1815,14 @@ export class OpenCodeAgentClient implements AgentClient {
       });
       const availability = await checkProviderLaunchAvailable(launch);
 
-      let authValue = "Not checked";
-      const authCommand = availability.available
-        ? (availability.resolvedPath ?? launch.command)
-        : null;
+      let authValue =
+        options.checkAuth === false
+          ? "Not checked (on OpenCode 2, `opencode auth list` starts its background service)"
+          : "Not checked";
+      const authCommand =
+        availability.available && options.checkAuth !== false
+          ? (availability.resolvedPath ?? launch.command)
+          : null;
       if (authCommand) {
         try {
           const { stdout, stderr } = await execCommand(
