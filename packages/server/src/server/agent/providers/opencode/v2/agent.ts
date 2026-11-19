@@ -17,6 +17,7 @@ import type {
   AgentCapabilityFlags,
   AgentClient,
   AgentCreateSessionOptions,
+  AgentResumeSessionOptions,
   AgentDraftControls,
   AgentLaunchContext,
   AgentPersistenceHandle,
@@ -138,6 +139,7 @@ export class OpenCodeV2AgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     launch?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
   ): Promise<AgentSession> {
     const cwd = overrides?.cwd ?? handle.metadata?.cwd;
     if (typeof cwd !== "string")
@@ -158,7 +160,14 @@ export class OpenCodeV2AgentClient implements AgentClient {
         sessionID: handle.nativeHandle ?? handle.sessionId,
       });
       await applyResumeOverrides(connection.client, info, overrides);
-      return await this.attach(connection, info, config, launch, true);
+      return await this.attach(
+        connection,
+        info,
+        config,
+        launch,
+        true,
+        options?.purpose === "history",
+      );
     } catch (error) {
       await connection.release();
       throw error;
@@ -170,6 +179,7 @@ export class OpenCodeV2AgentClient implements AgentClient {
     config: AgentSessionConfig,
     launch: AgentLaunchContext | undefined,
     persist: boolean,
+    historyOnly = false,
   ) {
     const acquire = () =>
       this.runtime.acquire(
@@ -220,6 +230,7 @@ export class OpenCodeV2AgentClient implements AgentClient {
         runtimeSettings: this.options.settings,
         overlays: launch?.env ? [launch.env] : [],
       }),
+      historyOnly,
     );
     try {
       await session.initialize(

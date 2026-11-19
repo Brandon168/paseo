@@ -5,6 +5,7 @@ import type {
   AudioPlaybackSource,
 } from "./audio-engine-types";
 
+import { AudioCaptureStartError } from "./audio-engine-types";
 import { createNativeEngineLease, type NativeEngineLease } from "./native-engine-lease";
 import { createPlaybackQueue } from "./playback";
 import { playPcm16 } from "./pcm";
@@ -130,6 +131,9 @@ export function createNativeAudioEngine(
 
   let initializing: Promise<void> | null = null;
   async function ensureInitialized(): Promise<void> {
+    if (refs.destroyed) {
+      throw new Error("Audio engine destroyed");
+    }
     if (refs.initialized) {
       return;
     }
@@ -137,8 +141,8 @@ export function createNativeAudioEngine(
       try {
         await lease.acquire();
         if (refs.destroyed) {
-          lease.release();
-          return;
+          releaseNativeEngine();
+          throw new Error("Audio engine destroyed");
         }
         refs.initialized = true;
       } finally {
@@ -166,14 +170,28 @@ export function createNativeAudioEngine(
   }
 
   async function ensureMicrophonePermission(): Promise<void> {
-    let permission = await native.getMicrophonePermissionsAsync().catch(() => null);
-    if (!permission?.granted) {
-      permission = await native.requestMicrophonePermissionsAsync().catch(() => null);
+    const permission = await native.getMicrophonePermissionsAsync().catch(() => null);
+    if (permission?.granted) return;
+
+    let cause: unknown;
+    try {
+      if ((await native.requestMicrophonePermissionsAsync()).granted) return;
+    } catch (error) {
+      cause = error;
     }
-    if (!permission?.granted) {
-      throw new Error(
-        "Microphone permission is required to capture audio. Please enable microphone access in system settings.",
-      );
+    throw new AudioCaptureStartError(
+      "permissionDenied",
+      "Allow microphone access in system settings and try again.",
+      { cause },
+    );
+  }
+
+  function releaseNativeEngine(): void {
+    try {
+      // Native keeps the session active while any wrapper is capturing or playing.
+      native.releaseAudioSession();
+    } finally {
+      lease.release();
     }
   }
 
@@ -182,6 +200,7 @@ export function createNativeAudioEngine(
     if (signal.aborted) throw new Error("Playback stopped");
     if (audio.type.startsWith("audio/pcm")) {
       await ensureInitialized();
+      if (signal.aborted) throw new Error("Playback stopped");
       return playPcm16(bytes, audio.type, signal, native);
     }
     return deps.playEncodedAudio(bytes, audio.type, signal, {
@@ -200,20 +219,23 @@ export function createNativeAudioEngine(
         return;
       }
       refs.destroyed = true;
-      playback.destroy();
-      if (refs.captureActive) {
-        native.toggleRecording(false);
-        refs.captureActive = false;
+      try {
+        playback.destroy();
+        if (refs.captureActive) {
+          refs.captureActive = false;
+          native.toggleRecording(false);
+        }
+        refs.muted = false;
+        callbacks.onVolumeLevel(0);
+      } finally {
+        microphoneSubscription.remove();
+        volumeSubscription.remove();
+        interruptionSubscription.remove();
+        if (refs.initialized) {
+          refs.initialized = false;
+          releaseNativeEngine();
+        }
       }
-      refs.muted = false;
-      callbacks.onVolumeLevel(0);
-      if (refs.initialized) {
-        refs.initialized = false;
-        lease.release();
-      }
-      microphoneSubscription.remove();
-      volumeSubscription.remove();
-      interruptionSubscription.remove();
     },
 
     async startCapture() {
@@ -221,24 +243,22 @@ export function createNativeAudioEngine(
         return;
       }
 
-      try {
-        await ensureMicrophonePermission();
-        await ensureInitialized();
-        const isRecording =
-          options?.captureMode === "dictation"
-            ? native.startDictation()
-            : native.toggleRecording(true);
-        if (!isRecording) {
-          throw new Error(
-            "Microphone capture could not start. Another app may be using the microphone.",
-          );
-        }
-        refs.captureActive = true;
-      } catch (error) {
-        const wrapped = error instanceof Error ? error : new Error(String(error));
-        callbacks.onError?.(wrapped);
-        throw wrapped;
+      await ensureMicrophonePermission();
+      await ensureInitialized();
+      if (refs.destroyed) {
+        throw new Error("Audio engine destroyed");
       }
+      if (refs.captureActive) {
+        return;
+      }
+      const isRecording =
+        options?.captureMode === "dictation"
+          ? native.startDictation()
+          : native.toggleRecording(true);
+      if (!isRecording) {
+        throw new Error("Microphone capture could not start.");
+      }
+      refs.captureActive = true;
     },
 
     async stopCapture() {

@@ -543,21 +543,20 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
         return models.find((model) => model.id === modelId)?.thinkingOptions?.map(({ id }) => id);
       };
 
-      expect(getThinkingIds("claude-opus-5")).toContain("ultracode");
+      expect(getThinkingIds("claude-opus-5")).not.toContain("ultracode");
       expect(getThinkingIds("claude-mythos-5-1")).toEqual([
         "low",
         "medium",
         "high",
         "xhigh",
         "max",
-        "ultracode",
       ]);
-      expect(getThinkingIds("claude-fable-5-1")).toContain("ultracode");
-      expect(getThinkingIds("claude-fable-5")).toContain("ultracode");
-      expect(getThinkingIds("claude-opus-4-8[1m]")).toContain("ultracode");
-      expect(getThinkingIds("claude-opus-4-8")).toContain("ultracode");
+      expect(getThinkingIds("claude-fable-5-1")).not.toContain("ultracode");
+      expect(getThinkingIds("claude-fable-5")).not.toContain("ultracode");
+      expect(getThinkingIds("claude-opus-4-8[1m]")).not.toContain("ultracode");
+      expect(getThinkingIds("claude-opus-4-8")).not.toContain("ultracode");
       expect(getThinkingIds("claude-sonnet-5")).toContain("xhigh");
-      expect(getThinkingIds("claude-sonnet-5")).toContain("ultracode");
+      expect(getThinkingIds("claude-sonnet-5")).not.toContain("ultracode");
       expect(getThinkingIds("claude-haiku-5-5")).toEqual([
         "off",
         "low",
@@ -565,12 +564,11 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
         "high",
         "xhigh",
         "max",
-        "ultracode",
       ]);
       expect(getThinkingIds("claude-sonnet-5-5")).toContain("xhigh");
       expect(getThinkingIds("claude-sonnet-5-5")).not.toContain("off");
-      expect(getThinkingIds("claude-opus-4-7[1m]")).toContain("ultracode");
-      expect(getThinkingIds("claude-opus-4-7")).toContain("ultracode");
+      expect(getThinkingIds("claude-opus-4-7[1m]")).not.toContain("ultracode");
+      expect(getThinkingIds("claude-opus-4-7")).not.toContain("ultracode");
       expect(getThinkingIds("claude-sonnet-4-6")).not.toContain("ultracode");
     } finally {
       await fs.rm(emptyConfigDir, { recursive: true, force: true });
@@ -998,6 +996,43 @@ describe("ClaudeAgentSession features", () => {
     }
   });
 
+  test("carries the SDK decision reason onto the permission request description", async () => {
+    const { queryFactory } = createQueryMock();
+    const session = await new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "default" });
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    try {
+      await session.startTurn("run the tool");
+      const canUseTool = queryFactory.mock.calls[0]?.[0].options.canUseTool;
+      if (!canUseTool) throw new Error("Expected canUseTool callback");
+      canUseTool(
+        "Bash",
+        { command: "printf test" },
+        {
+          toolUseID: "tool-hook-ask",
+          decisionReason:
+            "\u001b[33mHeredoc input to python3 -- cannot statically verify safety\u001b[0m",
+        },
+      ).catch(() => undefined);
+
+      expect(events.find((event) => event.type === "permission_requested")).toMatchObject({
+        type: "permission_requested",
+        request: {
+          name: "Bash",
+          description: "Heredoc input to python3 -- cannot statically verify safety",
+        },
+      });
+    } finally {
+      unsubscribe();
+      await session.close();
+    }
+  });
+
   test("passes exact configured Fable 5 IDs through to Claude Code", async () => {
     const { queryFactory, queryMock } = createQueryMock();
     const client = new ClaudeAgentClient({
@@ -1144,8 +1179,8 @@ describe("ClaudeAgentSession features", () => {
     await session.close();
   });
 
-  test("lists fast mode only for supported Opus models", async () => {
-    const client = new ClaudeAgentClient({ logger, resolveBinary: async () => "/test/claude/bin" });
+  test("lists Claude controls by model capability", async () => {
+    const client = new ClaudeAgentClient({ logger, resolveVersion: async () => "2.1.284" });
 
     await expect(
       client.listControls({
@@ -1154,7 +1189,10 @@ describe("ClaudeAgentSession features", () => {
         model: "claude-opus-4-8",
       }),
     ).resolves.toEqual({
-      controls: [expect.objectContaining({ key: "fast_mode", type: "toggle" })],
+      controls: [
+        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
+        expect.objectContaining({ key: "ultracode", type: "toggle" }),
+      ],
       options: {},
     });
 
@@ -1165,7 +1203,10 @@ describe("ClaudeAgentSession features", () => {
         model: "claude-opus-4-8[1m]",
       }),
     ).resolves.toEqual({
-      controls: [expect.objectContaining({ key: "fast_mode", type: "toggle" })],
+      controls: [
+        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
+        expect.objectContaining({ key: "ultracode", type: "toggle" }),
+      ],
       options: {},
     });
 
@@ -1176,7 +1217,10 @@ describe("ClaudeAgentSession features", () => {
         model: "claude-opus-4-8-20260101",
       }),
     ).resolves.toEqual({
-      controls: [expect.objectContaining({ key: "fast_mode", type: "toggle" })],
+      controls: [
+        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
+        expect.objectContaining({ key: "ultracode", type: "toggle" }),
+      ],
       options: {},
     });
 
@@ -1187,7 +1231,10 @@ describe("ClaudeAgentSession features", () => {
         model: "claude-opus-5",
       }),
     ).resolves.toEqual({
-      controls: [expect.objectContaining({ key: "fast_mode", type: "toggle" })],
+      controls: [
+        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
+        expect.objectContaining({ key: "ultracode", type: "toggle" }),
+      ],
       options: {},
     });
 
@@ -1197,7 +1244,10 @@ describe("ClaudeAgentSession features", () => {
         cwd: process.cwd(),
         model: "openrouter/anthropic/claude-opus-4-8",
       }),
-    ).resolves.toEqual({ controls: [], options: {} });
+    ).resolves.toEqual({
+      controls: [expect.objectContaining({ key: "ultracode", type: "toggle" })],
+      options: {},
+    });
 
     await expect(
       client.listControls({
@@ -1205,7 +1255,10 @@ describe("ClaudeAgentSession features", () => {
         cwd: process.cwd(),
         model: "claude-sonnet-5",
       }),
-    ).resolves.toEqual({ controls: [], options: {} });
+    ).resolves.toEqual({
+      controls: [expect.objectContaining({ key: "ultracode", type: "toggle" })],
+      options: {},
+    });
 
     await expect(
       client.listControls({
@@ -1501,6 +1554,60 @@ describe("ClaudeAgentSession features", () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(rewindReachedLiveInput).toBe(false);
+    } finally {
+      unsubscribe();
+      await session.close();
+    }
+  });
+
+  test("accepts a steer while Claude compacts, so the compaction is not interrupted", async () => {
+    const { queryFactory, push } = createStreamingQueryMock();
+    const client = new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+    });
+    const session = await client.createSession({ provider: "claude", cwd: process.cwd() });
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+    try {
+      const { turnId } = await session.startTurn("/compact");
+      const input = queryFactory.mock.calls[0]?.[0].prompt as AsyncIterable<SDKUserMessage>;
+      const iterator = input[Symbol.asyncIterator]();
+      await expect(iterator.next()).resolves.toMatchObject({ value: { type: "user" } });
+      await vi.waitFor(() =>
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: "timeline",
+            item: expect.objectContaining({ type: "user_message" }),
+          }),
+        ),
+      );
+      push({
+        type: "system",
+        subtype: "status",
+        status: "compacting",
+        session_id: "session-1",
+      } as unknown as SDKMessage);
+      await vi.waitFor(() =>
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: "timeline",
+            item: { type: "compaction", status: "loading" },
+          }),
+        ),
+      );
+
+      const admission = await session.steerActiveTurn?.("message during compaction", {
+        expectedTurnId: turnId,
+      });
+
+      // Claude Code holds a `next` message until the compaction finishes. Refusing it makes the
+      // manager replace the turn, and the interrupt cancels the compaction.
+      expect(admission).toEqual({ status: "accepted", providerMessageId: expect.any(String) });
+      await expect(iterator.next()).resolves.toMatchObject({
+        value: { type: "user", priority: "next" },
+      });
     } finally {
       unsubscribe();
       await session.close();
@@ -4694,71 +4801,6 @@ describe("Claude question permission notifications", () => {
 
     expect(request.title).toBeUndefined();
     expect(request.description).toBeUndefined();
-  });
-
-  // Regression for #6923: in Bypass mode Claude Code still asks for some
-  // safety checks, and the card never said why because the SDK's
-  // decisionReason was dropped.
-  describe("decision reason", () => {
-    const rmCheckReason =
-      "This command could not be checked for dangerous rm operations: the shell may read it differently than it was parsed. This requires explicit approval.";
-
-    test("shows Claude's reason as the card description and keeps it in metadata", async () => {
-      const request = await requestPermission(
-        "Bash",
-        { command: "echo 'a $$(b) c'" },
-        { toolUseID: "tool-6923", decisionReason: `  ${rmCheckReason}\n` },
-      );
-
-      expect(request.description).toBe(rmCheckReason);
-      expect(request.metadata).toEqual({ toolUseId: "tool-6923", decisionReason: rmCheckReason });
-    });
-
-    test("carries the blocked path and the ask rule that forced the prompt", async () => {
-      const request = await requestPermission(
-        "Bash",
-        { command: "cat ~/secret" },
-        {
-          decisionReason: "Path is outside allowed directories",
-          blockedPath: "/home/user/secret",
-          matchedAskRule: { source: "userSettings", toolName: "Bash", ruleContent: "cat:*" },
-        },
-      );
-
-      expect(request.metadata).toMatchObject({
-        decisionReason: "Path is outside allowed directories",
-        blockedPath: "/home/user/secret",
-        matchedAskRule: { source: "userSettings", toolName: "Bash", ruleContent: "cat:*" },
-      });
-    });
-
-    test("keeps the question summary for AskUserQuestion", async () => {
-      const request = await requestPermission(
-        "AskUserQuestion",
-        {
-          questions: [
-            {
-              question: "Which library should we use?",
-              header: "Library",
-              options: [{ label: "date-fns" }, { label: "Luxon" }],
-              multiSelect: false,
-            },
-          ],
-        },
-        { decisionReason: "Tool requires user input" },
-      );
-
-      expect(request.title).toBe("Which library should we use?");
-      expect(request.description).toBe("date-fns / Luxon");
-      expect(request.metadata).toMatchObject({ decisionReason: "Tool requires user input" });
-    });
-
-    test("ignores a blank reason", async () => {
-      const request = await requestPermission("Bash", { command: "ls" }, { decisionReason: "   " });
-
-      expect(request.description).toBeUndefined();
-      expect(request.metadata).toBeUndefined();
-    });
   });
 });
 

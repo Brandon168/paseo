@@ -5,13 +5,18 @@ import { createNativeAudioEngine, type NativeAudioEngineDeps } from "./native-au
 // In-memory stand-in for `@getpaseo/expo-two-way-audio`, matching its iOS and Android modules:
 // one native engine per app, `initialize()` reuses it, `tearDown()` frees it, and
 // `toggleRecording(true)` / `startDictation()` return false while no engine exists.
-function fakeTwoWayAudio() {
-  let engine: { recording: boolean } | null = null;
+// Session handling follows iOS: recording activates the OS audio session, stopping does not
+// deactivate it, and `releaseAudioSession()` deactivates it only while nothing is recording.
+function fakeTwoWayAudio({
+  captureAvailable = true,
+  permissionRequestError,
+}: { captureAvailable?: boolean; permissionRequestError?: Error } = {}) {
+  let engine: { recording: boolean; sessionActive: boolean } | null = null;
   const calls = { initialize: 0, tearDown: 0 };
   const native: NativeAudioEngineDeps["native"] = {
     async initialize() {
       calls.initialize += 1;
-      engine ??= { recording: false };
+      engine ??= { recording: false, sessionActive: false };
       return true;
     },
     tearDown() {
@@ -21,21 +26,26 @@ function fakeTwoWayAudio() {
     toggleRecording(value: boolean) {
       if (!engine) return false;
       engine.recording = value;
+      if (value) engine.sessionActive = true;
       return value;
     },
     startDictation() {
-      if (!engine) return false;
+      if (!engine || !captureAvailable) return false;
       engine.recording = true;
+      engine.sessionActive = true;
       return true;
     },
-    releaseAudioSession() {},
+    releaseAudioSession() {
+      if (engine && !engine.recording) engine.sessionActive = false;
+    },
     playPCMData() {},
     resumePlayback() {},
     stopPlayback() {},
     async getMicrophonePermissionsAsync() {
-      return { granted: true };
+      return { granted: !permissionRequestError };
     },
     async requestMicrophonePermissionsAsync() {
+      if (permissionRequestError) throw permissionRequestError;
       return { granted: true };
     },
     addExpoTwoWayAudioEventListener() {
@@ -46,20 +56,14 @@ function fakeTwoWayAudio() {
     native,
     calls,
     hasEngine: () => engine !== null,
+    sessionActive: () => engine?.sessionActive ?? false,
   };
 }
 
-function recordingCallbacks() {
-  const errors: Error[] = [];
-  const callbacks: AudioEngineCallbacks = {
-    onCaptureData() {},
-    onVolumeLevel() {},
-    onError(error) {
-      errors.push(error);
-    },
-  };
-  return { callbacks, errors };
-}
+const recordingCallbacks: AudioEngineCallbacks = {
+  onCaptureData() {},
+  onVolumeLevel() {},
+};
 
 function deps(native: NativeAudioEngineDeps["native"]): NativeAudioEngineDeps {
   return {
@@ -72,33 +76,27 @@ function deps(native: NativeAudioEngineDeps["native"]): NativeAudioEngineDeps {
 // after the dictation engine was destroyed.
 test("voice capture starts after the dictation engine is destroyed", async () => {
   const fake = fakeTwoWayAudio();
-  const voice = recordingCallbacks();
-  const voiceEngine = createNativeAudioEngine(deps(fake.native), voice.callbacks);
+  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks);
   await voiceEngine.initialize();
 
-  const dictationEngine = createNativeAudioEngine(
-    deps(fake.native),
-    recordingCallbacks().callbacks,
-    { captureMode: "dictation" },
-  );
+  const dictationEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
   await dictationEngine.startCapture();
   await dictationEngine.stopCapture();
   await dictationEngine.destroy();
 
   await expect(voiceEngine.startCapture()).resolves.toBeUndefined();
-  expect(voice.errors).toEqual([]);
 });
 
 test("destroying dictation while voice is capturing keeps the native engine", async () => {
   const fake = fakeTwoWayAudio();
-  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks().callbacks);
+  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks);
   await voiceEngine.startCapture();
 
-  const dictationEngine = createNativeAudioEngine(
-    deps(fake.native),
-    recordingCallbacks().callbacks,
-    { captureMode: "dictation" },
-  );
+  const dictationEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
   await dictationEngine.initialize();
   await dictationEngine.destroy();
 
@@ -106,14 +104,43 @@ test("destroying dictation while voice is capturing keeps the native engine", as
   expect(fake.calls.tearDown).toBe(0);
 });
 
+// Review on #9051: with voice holding the engine, destroying an active dictation engine must
+// still hand back the idle OS audio session so background music resumes (#2866).
+test("destroying active dictation releases the idle audio session while voice keeps the engine", async () => {
+  const fake = fakeTwoWayAudio();
+  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks);
+  await voiceEngine.initialize();
+
+  const dictationEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
+  await dictationEngine.startCapture();
+  await dictationEngine.destroy();
+
+  expect(fake.hasEngine()).toBe(true);
+  expect(fake.sessionActive()).toBe(false);
+});
+
+test("destroying dictation does not release the session while voice is recording", async () => {
+  const fake = fakeTwoWayAudio();
+  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks);
+  await voiceEngine.startCapture();
+
+  const dictationEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
+  await dictationEngine.initialize();
+  await dictationEngine.destroy();
+
+  expect(fake.sessionActive()).toBe(true);
+});
+
 test("destroying the last engine tears the native engine down", async () => {
   const fake = fakeTwoWayAudio();
-  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks().callbacks);
-  const dictationEngine = createNativeAudioEngine(
-    deps(fake.native),
-    recordingCallbacks().callbacks,
-    { captureMode: "dictation" },
-  );
+  const voiceEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks);
+  const dictationEngine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
   await voiceEngine.initialize();
   await dictationEngine.initialize();
 
@@ -126,11 +153,36 @@ test("destroying the last engine tears the native engine down", async () => {
 
 test("an engine destroyed while initializing does not keep the native engine", async () => {
   const fake = fakeTwoWayAudio();
-  const engine = createNativeAudioEngine(deps(fake.native), recordingCallbacks().callbacks);
+  const engine = createNativeAudioEngine(deps(fake.native), recordingCallbacks);
 
-  const initializing = engine.initialize();
+  const initializing = expect(engine.initialize()).rejects.toThrow("Audio engine destroyed");
   await engine.destroy();
   await initializing;
 
   expect(fake.hasEngine()).toBe(false);
+});
+
+test("a failed native recording start rejects with a platform-neutral error", async () => {
+  const fake = fakeTwoWayAudio({ captureAvailable: false });
+  const engine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
+
+  await expect(engine.startCapture()).rejects.toThrow(/^Microphone capture could not start\.$/);
+  await engine.destroy();
+});
+
+test("a failed native permission request retains the permission reason and original error", async () => {
+  const permissionRequestError = new Error("The current activity is not available.");
+  const fake = fakeTwoWayAudio({ permissionRequestError });
+  const engine = createNativeAudioEngine(deps(fake.native), recordingCallbacks, {
+    captureMode: "dictation",
+  });
+
+  await expect(engine.startCapture()).rejects.toMatchObject({
+    reason: "permissionDenied",
+    cause: permissionRequestError,
+  });
+  expect(fake.hasEngine()).toBe(false);
+  await engine.destroy();
 });

@@ -67,9 +67,10 @@ export class OpenCodeBridge {
   private pluginUrl: string | null = null;
   private v2PluginUrl: string | null = null;
   private manifestCatalog: Pick<PaseoToolCatalog, "tools"> | null = null;
-  // Tools that only some sessions carry (agent tools contributed by plugins). The manifest is
-  // built without a caller agent, so these are learned from the per-agent catalogs sessions
-  // bring. Entries are never removed: executeTool still gates on the calling session's catalog.
+  // Tools that only some sessions carry (agent tools contributed by plugins). The global manifest
+  // the v1 plugin reads is built without a caller agent, so these are learned from the per-agent
+  // catalogs sessions bring. Entries are never removed: executeTool still gates on the calling
+  // session's catalog. The v2 plugin asks for its bound session's catalog instead.
   private readonly learnedTools = new Map<string, PaseoToolDefinition>();
 
   constructor(options: OpenCodeBridgeOptions) {
@@ -108,7 +109,7 @@ export class OpenCodeBridge {
    * Adds a session catalog's tools to the manifest. Call it before OpenCode loads the bridge
    * plugin for the session's directory: the v1 plugin reads the manifest once per directory
    * load, so a plugin tool announced afterwards is only registered after the OpenCode server
-   * restarts (a daemon restart does that). The v2 plugin re-reads the manifest on every bind.
+   * restarts (a daemon restart does that). The v2 plugin reads its bound session's catalog.
    */
   announceTools(catalog: Pick<PaseoToolCatalog, "tools"> | undefined): void {
     if (!catalog) return;
@@ -188,7 +189,9 @@ export class OpenCodeBridge {
       }
       const url = new URL(request.url ?? "/", this.requireBaseUrl());
       if (request.method === "GET" && url.pathname === `${INTERNAL_PREFIX}/tools`) {
-        sendJson(response, 200, { tools: this.serializeManifest() });
+        sendJson(response, 200, {
+          tools: this.serializeManifest(url.searchParams.get("sessionID")),
+        });
         return;
       }
 
@@ -250,12 +253,23 @@ export class OpenCodeBridge {
     }
   }
 
-  private serializeManifest(): Array<Record<string, unknown>> {
-    const catalog = this.manifestCatalog;
+  private serializeManifest(sessionId: string | null): Array<Record<string, unknown>> {
+    let catalog: Pick<PaseoToolCatalog, "tools"> | null | undefined = this.manifestCatalog;
+    if (sessionId !== null) {
+      const binding = this.sessions.get(sessionId);
+      if (!binding) {
+        throw new OpenCodeBridgeClientError(404, "OpenCode session is not bound to a Paseo agent");
+      }
+      catalog = binding.tools;
+    }
     if (!catalog) return [];
+    // A session query (the v2 plugin) gets exactly that session's catalog. The global manifest
+    // (the v1 plugin, read once per directory load) also lists tools learned from sessions.
     const merged = new Map(catalog.tools);
-    for (const [name, tool] of this.learnedTools) {
-      if (!merged.has(name)) merged.set(name, tool);
+    if (sessionId === null) {
+      for (const [name, tool] of this.learnedTools) {
+        if (!merged.has(name)) merged.set(name, tool);
+      }
     }
     return [...merged.values()].map((tool) => {
       const definition: Record<string, unknown> = {
