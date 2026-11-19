@@ -75,8 +75,9 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 ### Plugin agent tools for OpenCode agents
 
 - **Status:** fork-only
+- **Commits:** `15bf5937f`
 - **Why:** Agent tools that plugins return from `agent.open.before` (Ask's `ask_user`, genui's `render_ui`) reached Claude agents but never OpenCode agents. The OpenCode bridge manifest is built once at boot without a caller agent, so it held only the built-in Paseo tools.
-- **Notes:** The bridge now adds the tools of every session catalog it sees to the manifest, announced before OpenCode loads the plugin for a directory. A session without the tool still gets "Paseo tool not found". The v1 bridge plugin reads the manifest once per directory load, so a plugin tool that first appears later needs an OpenCode server restart (a daemon restart does that). The v2 plugin re-reads it on every bind.
+- **Notes:** Upstream #9426 (in 0.17.0-beta.1) fixed this for the v2 bridge plugin, which now asks for its bound session's catalog; the fork keeps that path as upstream wrote it. What stays fork-only is the v1 bridge plugin: it reads the global manifest once per directory load, so the bridge adds the tools of every session catalog it sees to that manifest, announced before OpenCode loads the plugin. A session without the tool still gets "Paseo tool not found". A plugin tool that first appears after a directory is loaded needs an OpenCode server restart on v1 (a daemon restart does that).
 
 ### Inherit the OpenCode v2 default model
 
@@ -89,12 +90,6 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Status:** fork-only
 - **Commits:** `44ccce04e`
 - **Why:** Listing workspaces rebuilt every workspace's entry; only the matching ones are needed.
-
-### A permission card explains why Claude asked
-
-- **Status:** fork-only
-- **Commits:** `728953435`
-- **Why:** A Claude permission prompt showed the tool call but not the reason, which made approvals harder to judge.
 
 ### Lazy loading for daemon startup and a lean service entry
 
@@ -164,13 +159,6 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Why:** Sound detection alone interrupted on coughs, background noise and the reply's own echo. The transcript of the detected utterance now decides, with per-clip transcription, echo settling, and detector fixes for short words and sparse bursts.
 - **Notes:** Large, opinionated change. The earlier pause-on-sound approach was reverted; see Dropped.
 
-### Keep the native audio engine alive while voice mode uses it
-
-- **Status:** pr-open
-- **PR:** #9051
-- **Commits:** `2f180d821`, `55547f4e0`
-- **Why:** The native audio engine was torn down between clips, so playback and recording had to reinitialise mid-conversation.
-
 ### Send phone photos as downscaled JPEG
 
 - **Status:** pr-open
@@ -217,19 +205,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 These are already in getpaseo/paseo. They are listed so a rebase doesn't re-litigate them, and so a fork user knows which upstream version makes the fork unnecessary for that fix. Delete an entry once the next rebase includes it.
 
-### Report and remove a plugin the runtime terminated
-
-- **Status:** upstream
-- **PR:** #9285
-- **Upstream:** merged 2026-11-11, after this fork's base of 0.16.0-beta.2
-- **Why:** A plugin that died left a stale entry in the plugin list.
-
-### Collect idle Claude runtimes reopened without a turn
-
-- **Status:** upstream
-- **PR:** #9019
-- **Upstream:** merged 2026-11-07
-- **Why:** A reopened runtime that never ran a turn stayed resident.
+None at the moment.
 
 ## Reverted or dropped
 
