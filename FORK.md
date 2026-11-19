@@ -79,6 +79,13 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Why:** Agent tools that plugins return from `agent.open.before` (Ask's `ask_user`, genui's `render_ui`) reached Claude agents but never OpenCode agents. The OpenCode bridge manifest is built once at boot without a caller agent, so it held only the built-in Paseo tools.
 - **Notes:** Upstream #9426 (in 0.17.0-beta.1) fixed this for the v2 bridge plugin, which now asks for its bound session's catalog; the fork keeps that path as upstream wrote it. What stays fork-only is the v1 bridge plugin: it reads the global manifest once per directory load, so the bridge adds the tools of every session catalog it sees to that manifest, announced before OpenCode loads the plugin. A session without the tool still gets "Paseo tool not found". A plugin tool that first appears after a directory is loaded needs an OpenCode server restart on v1 (a daemon restart does that).
 
+### The OpenCode diagnostic no longer starts OpenCode's background service
+
+- **Status:** fork-only
+- **Commits:** `69e04a8e0`
+- **Why:** On OpenCode 2 the provider diagnostic ran `opencode auth list`, which starts `opencode serve --service` when none is running. A starting service resumes every session marked running, so a chat live on Paseo's own helper server got a second runner (anomalyco/opencode#51213): duplicate tool calls and a reply cut short.
+- **Notes:** OpenCode 1 keeps the auth check. Candidate for an upstream pull request.
+
 ### Inherit the OpenCode v2 default model
 
 - **Status:** fork-only
