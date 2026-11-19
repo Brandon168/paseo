@@ -393,6 +393,94 @@ describe("OpenCodeBridge", () => {
     }
   });
 
+  test("advertises plugin tools from session catalogs but only runs them for sessions that have them", async () => {
+    const paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-opencode-plugin-tools-"));
+    temporaryDirectories.push(paseoHome);
+    const base = createCatalog();
+    const pluginTool = {
+      name: "ask_user",
+      title: "Ask user",
+      description: "Asks the user a question.",
+      inputSchema: z.fromJSONSchema({
+        type: "object",
+        properties: { question: { type: "string" } },
+        required: ["question"],
+      }),
+      async handler(input: unknown) {
+        return { content: [{ type: "text", text: `asked: ${JSON.stringify(input)}` }] };
+      },
+    };
+    const withPluginTools = new Map([...base.tools, [pluginTool.name, pluginTool]]);
+    const pluginCatalog: PaseoToolCatalog = {
+      tools: withPluginTools,
+      getTool: (name) => withPluginTools.get(name),
+      async executeTool(name, input, context) {
+        const definition = withPluginTools.get(name);
+        if (!definition) throw new Error(`Unknown tool: ${name}`);
+        return await definition.handler(input, context ?? {});
+      },
+    };
+    const bridge = new OpenCodeBridge({ paseoHome, logger: createTestLogger() });
+    await bridge.start();
+    bridge.setManifestCatalog(base);
+    const plugin = readPluginOptions(bridge.decorateServerEnv({}));
+    const headers = { Authorization: `Bearer ${plugin.token}` };
+    const manifestNames = async () => {
+      const response = await fetch(`${plugin.baseUrl}/_internal/opencode/tools`, { headers });
+      return ((await response.json()) as { tools: Array<{ name: string }> }).tools.map(
+        (tool) => tool.name,
+      );
+    };
+    const call = (sessionId: string) =>
+      fetch(`${plugin.baseUrl}/_internal/opencode/sessions/${sessionId}/tools/ask_user`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ question: "ok?" }),
+      });
+
+    const releaseAll: Array<() => void> = [];
+    try {
+      expect(await manifestNames()).toEqual(["echo_context"]);
+
+      // Announced before the session is bound, like a first session in a new directory.
+      bridge.announceTools(pluginCatalog);
+      expect(await manifestNames()).toEqual(["echo_context", "ask_user"]);
+
+      releaseAll.push(
+        bridge.bindSession({ sessionId: "ses_with", env: {}, tools: pluginCatalog }),
+        bridge.bindSession({ sessionId: "ses_without", env: {}, tools: base }),
+      );
+      expect(await manifestNames()).toEqual(["echo_context", "ask_user"]);
+
+      const allowed = await call("ses_with");
+      expect(allowed.status).toBe(200);
+      expect(await allowed.json()).toEqual({
+        content: [{ type: "text", text: 'asked: {"question":"ok?"}' }],
+      });
+
+      const rejected = await call("ses_without");
+      expect(rejected.status).toBe(404);
+      expect(await rejected.json()).toEqual({ error: "Paseo tool not found: ask_user" });
+
+      // The bundled plugin registers the plugin tool, so OpenCode models can see it.
+      const pluginModule = await import(plugin.pluginUrl);
+      const hooks = await pluginModule.default(
+        { client: { session: { get: async () => ({ data: {} }) } } },
+        { baseUrl: plugin.baseUrl, token: plugin.token },
+      );
+      expect(Object.keys(hooks.tool).sort()).toEqual(["paseo_ask_user", "paseo_echo_context"]);
+      await expect(
+        hooks.tool.paseo_ask_user.execute(
+          { question: "ok?" },
+          { sessionID: "ses_without", ask: async () => undefined },
+        ),
+      ).rejects.toThrow("Paseo tool not found: ask_user");
+    } finally {
+      for (const release of releaseAll) release();
+      await bridge.close();
+    }
+  });
+
   test("v2 plugin filters caller tools and inherits child session bindings", async () => {
     const paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-opencode-v2-scope-"));
     temporaryDirectories.push(paseoHome);

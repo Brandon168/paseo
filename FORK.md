@@ -72,6 +72,12 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Why:** The context window card showed what was in the window but not how often the prompt cache hit, how many tokens the session had used, or whether the session was covered by a subscription.
 - **Notes:** Shows last-call and session cache hit rate (amber below 50%), session token total, and "Included in plan" for subscription sessions. OpenCode v2 sessions now report usage, so plan limits appear for them too. There is no plan source for Vercel AI Gateway, DeepSeek direct or NVIDIA keys.
 
+### Plugin agent tools for OpenCode agents
+
+- **Status:** fork-only
+- **Why:** Agent tools that plugins return from `agent.open.before` (Ask's `ask_user`, genui's `render_ui`) reached Claude agents but never OpenCode agents. The OpenCode bridge manifest is built once at boot without a caller agent, so it held only the built-in Paseo tools.
+- **Notes:** The bridge now adds the tools of every session catalog it sees to the manifest, announced before OpenCode loads the plugin for a directory. A session without the tool still gets "Paseo tool not found". The v1 bridge plugin reads the manifest once per directory load, so a plugin tool that first appears later needs an OpenCode server restart (a daemon restart does that). The v2 plugin re-reads it on every bind.
+
 ### Inherit the OpenCode v2 default model
 
 - **Status:** fork-only

@@ -11,7 +11,11 @@ import {
   addModelVisibleStructuredContent,
   serializePaseoToolInputParameters,
 } from "../../tools/paseo-tool-serialization.js";
-import { PaseoToolInputError, type PaseoToolCatalog } from "../../tools/types.js";
+import {
+  PaseoToolInputError,
+  type PaseoToolCatalog,
+  type PaseoToolDefinition,
+} from "../../tools/types.js";
 
 const INTERNAL_PREFIX = "/_internal/opencode";
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -63,6 +67,10 @@ export class OpenCodeBridge {
   private pluginUrl: string | null = null;
   private v2PluginUrl: string | null = null;
   private manifestCatalog: Pick<PaseoToolCatalog, "tools"> | null = null;
+  // Tools that only some sessions carry (agent tools contributed by plugins). The manifest is
+  // built without a caller agent, so these are learned from the per-agent catalogs sessions
+  // bring. Entries are never removed: executeTool still gates on the calling session's catalog.
+  private readonly learnedTools = new Map<string, PaseoToolDefinition>();
 
   constructor(options: OpenCodeBridgeOptions) {
     this.paseoHome = options.paseoHome;
@@ -96,9 +104,23 @@ export class OpenCodeBridge {
     this.manifestCatalog = catalog;
   }
 
+  /**
+   * Adds a session catalog's tools to the manifest. Call it before OpenCode loads the bridge
+   * plugin for the session's directory: the v1 plugin reads the manifest once per directory
+   * load, so a plugin tool announced afterwards is only registered after the OpenCode server
+   * restarts (a daemon restart does that). The v2 plugin re-reads the manifest on every bind.
+   */
+  announceTools(catalog: Pick<PaseoToolCatalog, "tools"> | undefined): void {
+    if (!catalog) return;
+    for (const [name, tool] of catalog.tools) {
+      if (!this.learnedTools.has(name)) this.learnedTools.set(name, tool);
+    }
+  }
+
   bindSession(input: BindOpenCodeSessionInput): () => void {
     if (this.sessions.has(input.sessionId))
       throw new Error(`OpenCode session ${input.sessionId} is already bound to a Paseo agent`);
+    this.announceTools(input.tools);
     const binding: OpenCodeSessionBinding = {
       env: { ...input.env },
       ...(input.tools ? { tools: input.tools } : {}),
@@ -231,7 +253,11 @@ export class OpenCodeBridge {
   private serializeManifest(): Array<Record<string, unknown>> {
     const catalog = this.manifestCatalog;
     if (!catalog) return [];
-    return [...catalog.tools.values()].map((tool) => {
+    const merged = new Map(catalog.tools);
+    for (const [name, tool] of this.learnedTools) {
+      if (!merged.has(name)) merged.set(name, tool);
+    }
+    return [...merged.values()].map((tool) => {
       const definition: Record<string, unknown> = {
         name: tool.name,
         description: tool.description,
