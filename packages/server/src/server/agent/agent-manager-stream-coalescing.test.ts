@@ -551,7 +551,14 @@ describe("live notification turns", () => {
         (await harness.manager.fetchTimeline(agentId, { wholeTurns: true, limit: 1 })).rows.map(
           (row) => row.item,
         ),
-      ).toEqual([completion, { type: "assistant_message", text: "Second reply" }]);
+      ).toEqual([
+        completion,
+        {
+          type: "assistant_message",
+          text: "Second reply",
+          model: { provider: "claude", modelId: "test-model" },
+        },
+      ]);
     } finally {
       harness.cleanup();
     }
