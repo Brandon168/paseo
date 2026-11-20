@@ -24,10 +24,10 @@ import { useTimeAgo } from "@/hooks/use-time-ago";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { settingsStyles } from "@/styles/settings";
 import { resolveProviderLabel } from "@/utils/provider-definitions";
-import { compareMatchScores, scoreTextFields } from "@getpaseo/protocol/search/text-match";
 import type { AgentModelDefinition, AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { ProviderProfileModel } from "@getpaseo/protocol/provider-config";
 import {
+  rankProviderModels,
   resolveProviderDiscoveredModels,
   type ProviderDiscoveredModelsCache,
 } from "./provider-diagnostic-models";
@@ -37,17 +37,6 @@ interface ProviderDiagnosticSheetProps {
   visible: boolean;
   onClose: () => void;
   serverId: string;
-}
-
-function rankModels<T>(items: T[], query: string, fields: (item: T) => string[]): T[] {
-  if (!query.trim()) return items;
-  const scored = items
-    .map((item) => ({ item, score: scoreTextFields(query, fields(item)) }))
-    .filter(
-      (entry): entry is { item: T; score: NonNullable<typeof entry.score> } => entry.score !== null,
-    );
-  scored.sort((a, b) => compareMatchScores(a.score, b.score));
-  return scored.map((entry) => entry.item);
 }
 
 function DiscoveredModelRow({
@@ -713,11 +702,11 @@ export function ProviderDiagnosticSheet({
 
   const q = query.trim();
   const filteredDiscovered = useMemo(
-    () => rankModels(discoveredModels, q, (m) => [m.label, m.id, m.description ?? ""]),
+    () => rankProviderModels(discoveredModels, q, (m) => [m.label, m.id, m.description ?? ""]),
     [discoveredModels, q],
   );
   const filteredCustom = useMemo(
-    () => rankModels(additionalModels, q, (m) => [m.label, m.id]),
+    () => rankProviderModels(additionalModels, q, (m) => [m.label, m.id]),
     [additionalModels, q],
   );
 

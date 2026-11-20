@@ -1,3 +1,4 @@
+import { compareMatchScores, scoreTextFields } from "@getpaseo/protocol/search/text-match";
 import type { AgentModelDefinition } from "@getpaseo/protocol/agent-types";
 
 export interface ProviderDiscoveredModelsCache {
@@ -45,4 +46,20 @@ export function resolveProviderDiscoveredModels({
   }
 
   return { models: [], cache: previousCache };
+}
+
+export function rankProviderModels<T>(
+  items: T[],
+  query: string,
+  fields: (item: T) => string[],
+): T[] {
+  if (!query.trim()) return items;
+  const scored = items
+    // Visibility bulk actions use these results, so scattered letters in long ids must not match.
+    .map((item) => ({ item, score: scoreTextFields(query, fields(item), { subsequence: false }) }))
+    .filter(
+      (entry): entry is { item: T; score: NonNullable<typeof entry.score> } => entry.score !== null,
+    );
+  scored.sort((a, b) => compareMatchScores(a.score, b.score));
+  return scored.map((entry) => entry.item);
 }

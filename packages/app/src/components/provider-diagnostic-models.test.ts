@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentModelDefinition } from "@getpaseo/protocol/agent-types";
 import {
+  rankProviderModels,
   resolveProviderDiscoveredModels,
   type ProviderDiscoveredModelsCache,
 } from "./provider-diagnostic-models";
@@ -96,5 +97,32 @@ describe("resolveProviderDiscoveredModels", () => {
     });
 
     expect(refreshing.models).toEqual([]);
+  });
+});
+
+describe("rankProviderModels", () => {
+  const models = [
+    { id: "opencode/deepseek-v4.1-flash-free", label: "DeepSeek V4.1 Flash Free" },
+    { id: "vercel-brandon-pro/fireworks/ember-1", label: "Ember-1" },
+    { id: "nvidia/stepfun-ai/step-5-preview", label: "Step 5 Preview" },
+    { id: "vercel-brandon-pro/inference-net/schematron-v2-turbo", label: "Schematron V2 Turbo" },
+    {
+      id: "vercel-brandon-pro/nvidia/nemotron-3.5-lightning-free",
+      label: "Nemotron 3.5 Lightning Free",
+    },
+  ];
+  const fields = (model: (typeof models)[number]) => [model.label, model.id];
+
+  it("keeps catalog order for an empty query", () => {
+    expect(rankProviderModels(models, "  ", fields)).toEqual(models);
+  });
+
+  it("matches case-insensitive tokens across the displayed fields", () => {
+    expect(rankProviderModels(models, " NVIDIA lightning ", fields)).toEqual([models[4]]);
+    expect(rankProviderModels(models, "no-such-model", fields)).toEqual([]);
+  });
+
+  it("searching free excludes scattered letter matches in backend model ids", () => {
+    expect(rankProviderModels(models, "free", fields)).toEqual([models[0], models[4]]);
   });
 });
