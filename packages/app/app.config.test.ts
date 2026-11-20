@@ -107,6 +107,14 @@ describe("home screen quick actions", () => {
     expect(xml).toContain('android:targetClass="sh.paseo.MainActivity"');
   });
 
+  it("writes a Voice chat shortcut that opens the New Workspace link with voice on", () => {
+    const xml = quickActions.buildShortcutsXml("sh.paseo");
+    expect(xml).toContain('android:shortcutId="voice-chat"');
+    expect(xml).toContain('android:shortcutShortLabel="Voice chat"');
+    expect(xml).toContain('android:data="paseo://new?voice=1"');
+    expect(xml.match(/<shortcut\b/g)).toHaveLength(2);
+  });
+
   it("targets the package it is built for, so the debug build opens its own activity", () => {
     const xml = quickActions.buildShortcutsXml("sh.paseo.debug");
     expect(xml).toContain('android:targetPackage="sh.paseo.debug"');
@@ -161,7 +169,7 @@ describe("home screen quick actions", () => {
     expect(schemes).toContain("paseo");
   }, 30_000);
 
-  it("offers New Workspace from the iPhone app icon", async () => {
+  it("offers New Workspace and Voice chat from the iPhone app icon", async () => {
     const { mkdtemp, rm } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -180,6 +188,11 @@ describe("home screen quick actions", () => {
           UIApplicationShortcutItemType: "new-workspace",
           UIApplicationShortcutItemTitle: "New Workspace",
           UIApplicationShortcutItemIconSymbolName: "plus",
+        },
+        {
+          UIApplicationShortcutItemType: "voice-chat",
+          UIApplicationShortcutItemTitle: "Voice chat",
+          UIApplicationShortcutItemIconSymbolName: "mic.fill",
         },
       ]);
     } finally {

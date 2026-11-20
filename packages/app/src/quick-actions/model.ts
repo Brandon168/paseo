@@ -1,8 +1,8 @@
 /** Home screen quick actions the app handles, keyed by the id the native shortcut carries. */
-export type QuickAction = "new-workspace";
+export type QuickAction = "new-workspace" | "voice-chat";
 
 export function resolveQuickAction(id: string | null | undefined): QuickAction | null {
-  return id === "new-workspace" ? "new-workspace" : null;
+  return id === "new-workspace" || id === "voice-chat" ? id : null;
 }
 
 /**

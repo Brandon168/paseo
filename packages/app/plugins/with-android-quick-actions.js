@@ -5,30 +5,34 @@ const { withAndroidManifest, withDangerousMod } = require("expo/config-plugins")
 const SHORTCUTS_RESOURCE = "shortcuts";
 const SHORTCUTS_META_NAME = "android.app.shortcuts";
 const LAUNCHER_ACTIVITY = ".MainActivity";
-const NEW_WORKSPACE = {
-  id: "new-workspace",
-  label: "New Workspace",
-  url: "paseo://new",
-};
+const SHORTCUTS = [
+  { id: "new-workspace", label: "New Workspace", url: "paseo://new" },
+  { id: "voice-chat", label: "Voice chat", url: "paseo://new?voice=1" },
+];
 
 /**
- * Static launcher shortcuts: long-pressing the app icon offers "New Workspace", which opens the
- * same deep link the app already routes (`paseo://new` → the New Workspace screen).
+ * Static launcher shortcuts: long-pressing the app icon offers "New Workspace" and "Voice chat",
+ * which open the deep links the app already routes (`paseo://new` → the New Workspace screen,
+ * `paseo://new?voice=1` → the same screen starting voice mode).
  */
+function buildShortcutXml(packageName, shortcut) {
+  return `  <shortcut
+    android:shortcutId="${shortcut.id}"
+    android:enabled="true"
+    android:shortcutShortLabel="${shortcut.label}"
+    android:shortcutLongLabel="${shortcut.label}">
+    <intent
+      android:action="android.intent.action.VIEW"
+      android:data="${shortcut.url}"
+      android:targetPackage="${packageName}"
+      android:targetClass="${packageName}${LAUNCHER_ACTIVITY}" />
+  </shortcut>`;
+}
+
 function buildShortcutsXml(packageName) {
   return `<?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
-  <shortcut
-    android:shortcutId="${NEW_WORKSPACE.id}"
-    android:enabled="true"
-    android:shortcutShortLabel="${NEW_WORKSPACE.label}"
-    android:shortcutLongLabel="${NEW_WORKSPACE.label}">
-    <intent
-      android:action="android.intent.action.VIEW"
-      android:data="${NEW_WORKSPACE.url}"
-      android:targetPackage="${packageName}"
-      android:targetClass="${packageName}${LAUNCHER_ACTIVITY}" />
-  </shortcut>
+${SHORTCUTS.map((shortcut) => buildShortcutXml(packageName, shortcut)).join("\n")}
 </shortcuts>
 `;
 }

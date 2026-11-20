@@ -114,12 +114,18 @@ export default {
       infoPlist: {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
-        // Long-pressing the app icon offers New Workspace; handled by modules/paseo-quick-actions.
+        // Long-pressing the app icon offers New Workspace and Voice chat; handled by
+        // modules/paseo-quick-actions. The item types are the ids src/quick-actions/model.ts reads.
         UIApplicationShortcutItems: [
           {
             UIApplicationShortcutItemType: "new-workspace",
             UIApplicationShortcutItemTitle: "New Workspace",
             UIApplicationShortcutItemIconSymbolName: "plus",
+          },
+          {
+            UIApplicationShortcutItemType: "voice-chat",
+            UIApplicationShortcutItemTitle: "Voice chat",
+            UIApplicationShortcutItemIconSymbolName: "mic.fill",
           },
         ],
       },

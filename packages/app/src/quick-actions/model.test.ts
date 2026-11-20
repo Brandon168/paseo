@@ -16,6 +16,7 @@ describe("resolveQuickAction", () => {
     ["", null],
     ["unknown", null],
     ["new-workspace", "new-workspace"],
+    ["voice-chat", "voice-chat"],
   ])("maps %j to %j", (id, expected) => {
     expect(resolveQuickAction(id)).toBe(expected);
   });
@@ -68,5 +69,23 @@ describe("createQuickActionQueue", () => {
     queue.receive("unknown");
     queue.setReady(true);
     expect(opened).toEqual(["new-workspace"]);
+  });
+
+  it("keeps the most recent action when two arrive before the app is ready", () => {
+    const { opened, queue } = setup();
+    queue.receive("new-workspace");
+    queue.receive("voice-chat");
+    queue.setReady(true);
+    expect(opened).toEqual(["voice-chat"]);
+  });
+
+  it("opens a voice chat held through a cold start once the app is ready", () => {
+    const { opened, queue } = setup();
+    queue.receive("voice-chat");
+    expect(opened).toEqual([]);
+    queue.setReady(true);
+    queue.setReady(false);
+    queue.setReady(true);
+    expect(opened).toEqual(["voice-chat"]);
   });
 });

@@ -7,13 +7,17 @@ import { buildNewWorkspaceRoute } from "@/utils/host-routes";
 import { createQuickActionQueue, type QuickAction } from "./model";
 import { subscribeQuickAction, takePendingQuickAction } from "./source";
 
+// On a phone the sessions drawer is transient state that survives backgrounding. Left open, it
+// covers the new screen, so the shortcut looks like it only reopened the drawer.
+function openNewWorkspaceRoute(route: Href) {
+  usePanelStore.getState().showMobileAgent();
+  router.navigate(route);
+}
+
 const openers: Record<QuickAction, () => void> = {
-  "new-workspace": () => {
-    // On a phone the sessions drawer is transient state that survives backgrounding. Left open, it
-    // covers the new screen, so the shortcut looks like it only reopened the drawer.
-    usePanelStore.getState().showMobileAgent();
-    router.navigate(buildNewWorkspaceRoute() as Href);
-  },
+  "new-workspace": () => openNewWorkspaceRoute(buildNewWorkspaceRoute() as Href),
+  // The route reads the device's Voice chat setting for the project and profile.
+  "voice-chat": () => openNewWorkspaceRoute(buildNewWorkspaceRoute({ voice: true }) as Href),
 };
 
 const queue = createQuickActionQueue((action) => openers[action]());
