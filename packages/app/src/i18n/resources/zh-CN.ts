@@ -1402,6 +1402,7 @@ export const zhCN: TranslationResources = {
     },
     titlePlaceholder: "标题（可选）",
     errors: {
+      voiceProfileUnavailable: "此主机上没有“{{name}}”配置文件，因此语音聊天未启动。",
       hostDisconnected: "Host 未连接",
       createWorktreeFailed: "创建 worktree 失败",
       composerStateRequired: "Composer 状态必填",
@@ -2462,6 +2463,15 @@ export const zhCN: TranslationResources = {
     },
     general: {
       title: "通用",
+      voiceChat: {
+        title: "语音聊天",
+        project: "项目",
+        projectHint: "语音聊天快捷方式的起始位置。默认是“新建工作区”会选择的项目。",
+        projectDefault: "默认项目",
+        profile: "智能体配置文件",
+        profileHint: "语音聊天用于选择模型的配置文件。",
+        profileDefault: "默认（主机上有 {{name}} 配置文件时使用它）",
+      },
       sending: "发送",
       setup: {
         label: "首次设置",

@@ -1413,6 +1413,8 @@ export const ar: TranslationResources = {
     },
     titlePlaceholder: "العنوان (اختياري)",
     errors: {
+      voiceProfileUnavailable:
+        "ملف التعريف «{{name}}» غير متاح على هذا المضيف، لذا لم تبدأ الدردشة الصوتية.",
       hostDisconnected: "Host غير متصل",
       createWorktreeFailed: "فشل في إنشاء شجرة العمل",
       composerStateRequired: "حالة الملحن مطلوبة",
@@ -2522,6 +2524,16 @@ export const ar: TranslationResources = {
     },
     general: {
       title: "عام",
+      voiceChat: {
+        title: "الدردشة الصوتية",
+        project: "المشروع",
+        projectHint:
+          "المكان الذي يبدأ منه اختصار الدردشة الصوتية. الافتراضي هو المشروع الذي سيختاره «مساحة عمل جديدة».",
+        projectDefault: "المشروع الافتراضي",
+        profile: "ملف تعريف الوكيل",
+        profileHint: "ملف التعريف الذي تستخدمه الدردشة الصوتية لاختيار النموذج.",
+        profileDefault: "افتراضي (ملف تعريف {{name}} إن وُجد على المضيف)",
+      },
       sending: "الإرسال",
       setup: {
         label: "الإعداد الأولي",

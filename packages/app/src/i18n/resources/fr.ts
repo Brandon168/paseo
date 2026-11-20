@@ -1443,6 +1443,8 @@ export const fr: TranslationResources = {
     },
     titlePlaceholder: "Titre (facultatif)",
     errors: {
+      voiceProfileUnavailable:
+        "Le profil « {{name}} » n’est pas disponible sur cet hôte, le chat vocal n’a donc pas démarré.",
       hostDisconnected: "L’hôte n’est pas connecté",
       createWorktreeFailed: "Impossible de créer le worktree",
       composerStateRequired: "L’état de la zone de saisie est requis",
@@ -2537,6 +2539,16 @@ export const fr: TranslationResources = {
     },
     general: {
       title: "Général",
+      voiceChat: {
+        title: "Chat vocal",
+        project: "Projet",
+        projectHint:
+          "Où démarre le raccourci Chat vocal. Par défaut, le projet que choisirait Nouvel espace de travail.",
+        projectDefault: "Projet par défaut",
+        profile: "Profil d’agent",
+        profileHint: "Le profil qu’un chat vocal utilise pour son modèle.",
+        profileDefault: "Par défaut (profil {{name}} si l’hôte en a un)",
+      },
       sending: "Envoi",
       setup: {
         label: "Configuration initiale",

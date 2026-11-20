@@ -1423,6 +1423,8 @@ export const en = {
     },
     titlePlaceholder: "Title (optional)",
     errors: {
+      voiceProfileUnavailable:
+        "The “{{name}}” profile isn’t available on this host, so voice chat didn’t start.",
       hostDisconnected: "Host is not connected",
       createWorktreeFailed: "Failed to create worktree",
       composerStateRequired: "Composer state is required",
@@ -2617,6 +2619,16 @@ export const en = {
     },
     general: {
       title: "General",
+      voiceChat: {
+        title: "Voice chat",
+        project: "Project",
+        projectHint:
+          "Where the Voice chat shortcut starts. Default is the project New workspace would pick.",
+        projectDefault: "Default project",
+        profile: "Agent profile",
+        profileHint: "The profile a voice chat uses for its model.",
+        profileDefault: "Default ({{name}} profile if the host has one)",
+      },
       sending: "Sending",
       setup: {
         label: "First-run setup",

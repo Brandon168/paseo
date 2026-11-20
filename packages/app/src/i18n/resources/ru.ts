@@ -1432,6 +1432,8 @@ export const ru: TranslationResources = {
     },
     titlePlaceholder: "Заголовок (необязательно)",
     errors: {
+      voiceProfileUnavailable:
+        "Профиль «{{name}}» недоступен на этом хосте, поэтому голосовой чат не запустился.",
       hostDisconnected: "Хост не подключён",
       createWorktreeFailed: "Не удалось создать worktree.",
       composerStateRequired: "Редактор сообщения ещё не готов.",
@@ -2524,6 +2526,16 @@ export const ru: TranslationResources = {
     },
     general: {
       title: "Основные",
+      voiceChat: {
+        title: "Голосовой чат",
+        project: "Проект",
+        projectHint:
+          "Где начинается ярлык голосового чата. По умолчанию — проект, который выбрало бы «Новое рабочее пространство».",
+        projectDefault: "Проект по умолчанию",
+        profile: "Профиль агента",
+        profileHint: "Профиль, чью модель использует голосовой чат.",
+        profileDefault: "По умолчанию (профиль {{name}}, если он есть на хосте)",
+      },
       sending: "Отправка",
       setup: {
         label: "Первоначальная настройка",

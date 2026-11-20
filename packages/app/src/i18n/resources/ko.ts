@@ -1420,6 +1420,8 @@ export const ko: TranslationResources = {
     },
     titlePlaceholder: "제목(선택 사항)",
     errors: {
+      voiceProfileUnavailable:
+        "이 호스트에 “{{name}}” 프로필이 없어 음성 채팅을 시작하지 못했습니다.",
       hostDisconnected: "호스트가 연결되어 있지 않습니다",
       createWorktreeFailed: "워크트리를 생성하지 못했습니다",
       composerStateRequired: "작성기 상태가 필요합니다",
@@ -2497,6 +2499,16 @@ export const ko: TranslationResources = {
     },
     general: {
       title: "일반",
+      voiceChat: {
+        title: "음성 채팅",
+        project: "프로젝트",
+        projectHint:
+          "음성 채팅 바로가기가 시작되는 위치입니다. 기본값은 새 작업 공간이 고르는 프로젝트입니다.",
+        projectDefault: "기본 프로젝트",
+        profile: "에이전트 프로필",
+        profileHint: "음성 채팅이 모델에 사용하는 프로필입니다.",
+        profileDefault: "기본값(호스트에 {{name}} 프로필이 있으면 그것)",
+      },
       sending: "전송",
       setup: {
         label: "초기 설정",

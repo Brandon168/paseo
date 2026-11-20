@@ -1427,6 +1427,8 @@ export const ja: TranslationResources = {
     },
     titlePlaceholder: "タイトル（任意）",
     errors: {
+      voiceProfileUnavailable:
+        "このホストに「{{name}}」プロファイルがないため、音声チャットを開始できませんでした。",
       hostDisconnected: "ホストが接続されていません",
       createWorktreeFailed: "ワークツリーの作成に失敗しました",
       composerStateRequired: "コンポーザーの状態が必要です",
@@ -2509,6 +2511,16 @@ export const ja: TranslationResources = {
     },
     general: {
       title: "一般",
+      voiceChat: {
+        title: "音声チャット",
+        project: "プロジェクト",
+        projectHint:
+          "音声チャットのショートカットが開始する場所。既定は新規ワークスペースが選ぶプロジェクトです。",
+        projectDefault: "既定のプロジェクト",
+        profile: "エージェントプロファイル",
+        profileHint: "音声チャットがモデルに使うプロファイル。",
+        profileDefault: "既定（ホストに {{name}} プロファイルがあればそれ）",
+      },
       sending: "送信",
       setup: {
         label: "初回セットアップ",

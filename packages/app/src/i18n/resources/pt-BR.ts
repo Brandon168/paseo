@@ -1439,6 +1439,8 @@ export const ptBR: TranslationResources = {
     },
     titlePlaceholder: "Título (opcional)",
     errors: {
+      voiceProfileUnavailable:
+        "O perfil “{{name}}” não está disponível neste host, então o chat de voz não iniciou.",
       hostDisconnected: "Host não está conectado",
       createWorktreeFailed: "Falha ao criar worktree",
       composerStateRequired: "O estado do composer é obrigatório",
@@ -2520,6 +2522,16 @@ export const ptBR: TranslationResources = {
     },
     general: {
       title: "Geral",
+      voiceChat: {
+        title: "Chat de voz",
+        project: "Projeto",
+        projectHint:
+          "Onde o atalho de chat de voz começa. O padrão é o projeto que Novo espaço de trabalho escolheria.",
+        projectDefault: "Projeto padrão",
+        profile: "Perfil de agente",
+        profileHint: "O perfil que um chat de voz usa para o modelo.",
+        profileDefault: "Padrão (perfil {{name}} se o host tiver)",
+      },
       sending: "Envio",
       setup: {
         label: "Configuração inicial",
