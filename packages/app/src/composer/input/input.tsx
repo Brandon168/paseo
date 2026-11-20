@@ -625,6 +625,7 @@ function MessageInputOverlay({
   onRetryFailedRecording,
   onDiscardFailedRecording,
   onRealtimeVoiceStop,
+  realtimeLeadingContent,
 }: {
   showDictationOverlay: boolean;
   showRealtimeOverlay: boolean;
@@ -648,6 +649,7 @@ function MessageInputOverlay({
   onRetryFailedRecording: () => void;
   onDiscardFailedRecording: () => void;
   onRealtimeVoiceStop: () => void;
+  realtimeLeadingContent: React.ReactNode;
 }) {
   if (showDictationOverlay) {
     return (
@@ -673,6 +675,7 @@ function MessageInputOverlay({
         isSwitching={voice.isVoiceSwitching}
         onToggleMute={voice.toggleMute}
         onStop={onRealtimeVoiceStop}
+        leadingContent={realtimeLeadingContent}
       />
     );
   }
@@ -2295,7 +2298,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                   addAttachmentLabel={t("composer.input.addAttachment")}
                 />
               )}
-              {leftContent}
+              {showRealtimeOverlay ? null : leftContent}
             </View>
 
             {/* Right: dictation, then the trailing action (voice mode, send or stop) */}
@@ -2332,6 +2335,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         attachmentMenuItems,
         t,
         leftContent,
+        showRealtimeOverlay,
         beforeVoiceContent,
         mode.showVoice,
         showOverlay,
@@ -2372,6 +2376,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             onRetryFailedRecording={handleRetryFailedRecording}
             onDiscardFailedRecording={handleDiscardFailedRecording}
             onRealtimeVoiceStop={handleRealtimeVoiceStop}
+            realtimeLeadingContent={leftContent}
           />
         </View>
       ),
@@ -2393,6 +2398,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         handleRetryFailedRecording,
         handleDiscardFailedRecording,
         handleRealtimeVoiceStop,
+        leftContent,
       ],
     );
     return (

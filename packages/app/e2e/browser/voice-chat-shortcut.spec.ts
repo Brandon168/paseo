@@ -119,3 +119,57 @@ test.describe("Voice chat shortcut (/new?voice=1)", () => {
     }
   });
 });
+
+test.describe("Voice chat shortcut on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test.describe.configure({ timeout: 180_000 });
+
+  test("the model picker stays one tap away while listening, and a profile switch keeps voice on", async ({
+    page,
+  }) => {
+    const workspace = await seedWorkspace({ repoPrefix: "voice-chat-phone-" });
+    const profiles = await seedAgentProfiles([
+      VOICE_PROFILE,
+      { ...VOICE_PROFILE, id: "agent_profile_e2e_deep", name: "Deep", model: "ten-second-stream" },
+    ]);
+    await preferMockAgent(page);
+    await installSyntheticMicrophone(page);
+    const harness = await installVoiceModeHarness(page);
+    try {
+      const query = new URLSearchParams({
+        voice: "1",
+        serverId: getServerId(),
+        projectId: workspace.projectId,
+        dir: workspace.repoPath,
+        name: workspace.projectDisplayName,
+      });
+      await page.goto(`/new?${query.toString()}`);
+      await harness.waitForFirstEnable();
+      await expect(page.getByRole("button", { name: STOP_VOICE })).toBeVisible({
+        timeout: 30_000,
+      });
+
+      // A real tap: it fails if voice mode covers the control or turns off its pointer events.
+      const modelControl = page.getByTestId("combined-model-selector").filter({ visible: true });
+      await expect(modelControl.first()).toHaveAttribute(
+        "aria-label",
+        "Select model (One minute stream)",
+      );
+      await modelControl.first().click();
+      await page.getByText("Deep", { exact: true }).first().click();
+
+      await expect(modelControl.first()).toHaveAttribute(
+        "aria-label",
+        "Select model (Ten second stream)",
+        {
+          timeout: 30_000,
+        },
+      );
+      await expect(page.getByRole("button", { name: STOP_VOICE })).toBeVisible();
+      expect(harness.enabledAgentIds).toHaveLength(1);
+    } finally {
+      await profiles.restore();
+      await workspace.cleanup();
+    }
+  });
+});

@@ -1,5 +1,5 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -13,6 +13,8 @@ interface RealtimeVoiceOverlayProps {
   isSwitching: boolean;
   onToggleMute: () => void;
   onStop: () => void;
+  /** The composer's own agent controls (model and profile picker), kept reachable while listening. */
+  leadingContent?: ReactNode;
 }
 
 const OVERLAY_BUTTON_SIZE = 44;
@@ -23,6 +25,7 @@ export function RealtimeVoiceOverlay({
   isSwitching,
   onToggleMute,
   onStop,
+  leadingContent,
 }: RealtimeVoiceOverlayProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -42,6 +45,7 @@ export function RealtimeVoiceOverlay({
   );
   return (
     <View style={styles.container}>
+      {leadingContent ? <View style={styles.leadingContainer}>{leadingContent}</View> : null}
       <View style={styles.meterContainer}>
         <VolumeMeter
           volume={volume}
@@ -104,6 +108,12 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface1,
     borderWidth: theme.borderWidth[1],
     borderColor: theme.colors.border,
+  },
+  leadingContainer: {
+    flexShrink: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
   },
   meterContainer: {
     flex: 1,
