@@ -138,6 +138,13 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Commits:** `0dba14e38`, `26c93cc54`
 - **Why:** Voice mode could only be reached after a conversation started; it is now offered before the first message and on the New workspace screen.
 
+### Voice chat shortcut
+
+- **Status:** fork-only
+- **Commits:** `3aebf5ed5`, `4f3625a4f`, `e2f3f76ef`
+- **Why:** Starting a spoken conversation took five taps (app, drawer, New workspace, model, voice mode). One entry point now opens a new chat that is already listening.
+- **Notes:** The route does the work: `/new?voice=1` (deep link `paseo://new?voice=1`, optional `&profile=<id or name>`) waits for the project, host connection and model, applies the profile, creates the first agent with no message and starts voice mode. Entry points: a second iOS quick action and Android launcher shortcut, "Voice chat", next to New Workspace (native build needed), and the link for an iOS Shortcut. Settings → General → Voice chat chooses the project and the profile; the defaults are what New workspace would pick, and the host's profile named "Voice", else the normal default. A voice chat opens in the project directory, not a remembered worktree, and the user's remembered New workspace model is restored after the agent exists. Voice mode on an existing chat by link is not built. Needs voice mode set up on the host; the microphone path is only testable on a device.
+
 ### Name an agent from its first message or first spoken words
 
 - **Status:** fork-only
