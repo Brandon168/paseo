@@ -819,6 +819,42 @@ describe("saveAppSettings", () => {
     expect(loaded.pluginThemeId).toBe("catppuccin/theme/mocha");
   });
 
+  it("persists the Voice chat project and profile, and defaults to neither", async () => {
+    const deps = makeDeps();
+    const queryClient = new QueryClient();
+    expect((await loadAppSettingsFromStorage(deps)).voiceChat).toEqual({
+      project: null,
+      profileId: null,
+    });
+
+    const voiceChat = {
+      project: {
+        serverId: "srv",
+        projectId: "proj",
+        sourceDirectory: "/work/proj",
+        displayName: "Proj",
+      },
+      profileId: "profile-1",
+    };
+    await saveAppSettings({ queryClient, updates: { voiceChat }, deps });
+
+    expect((await loadAppSettingsFromStorage(deps)).voiceChat).toEqual(voiceChat);
+  });
+
+  it("drops a malformed Voice chat project instead of the other settings", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          theme: "dark",
+          voiceChat: { project: { serverId: 1 }, profileId: "p" },
+        }),
+      }),
+    });
+    const loaded = await loadAppSettingsFromStorage(deps);
+    expect(loaded.theme).toBe("dark");
+    expect(loaded.voiceChat).toEqual({ project: null, profileId: "p" });
+  });
+
   // The row items are written as one object through one strict schema, so an item the schema
   // does not know does not just fail to persist itself — it takes every sibling toggle with it.
   it.each(SIDEBAR_ROW_ITEMS)("persists the %s row item being switched off", async (item) => {

@@ -438,6 +438,10 @@ interface NewWorkspaceRouteOptions {
   displayName?: string;
   projectId?: string;
   draftId?: string;
+  /** Start voice mode in the new chat as soon as it can (`voice=1`). */
+  voice?: boolean;
+  /** An agent profile id or name to apply before starting; used with `voice`. */
+  profile?: string;
 }
 
 function buildNewWorkspaceSearch(options: NewWorkspaceRouteOptions): string {
@@ -457,6 +461,12 @@ function buildNewWorkspaceSearch(options: NewWorkspaceRouteOptions): string {
   }
   if (options.draftId) {
     params.set("draftId", options.draftId);
+  }
+  if (options.voice) {
+    params.set("voice", "1");
+  }
+  if (options.profile) {
+    params.set("profile", options.profile);
   }
   return params.toString();
 }

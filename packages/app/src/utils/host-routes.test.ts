@@ -206,6 +206,11 @@ describe("global routes", () => {
 
   it("buildNewWorkspaceRoute returns the all-host New Workspace route", () => {
     expect(buildNewWorkspaceRoute()).toBe("/new");
+    expect(buildNewWorkspaceRoute({ voice: true })).toBe("/new?voice=1");
+    expect(buildNewWorkspaceRoute({ voice: false })).toBe("/new");
+    expect(buildNewWorkspaceRoute({ voice: true, profile: "Voice" })).toBe(
+      "/new?voice=1&profile=Voice",
+    );
   });
 
   it("buildNewWorkspaceRoute accepts an initial host", () => {

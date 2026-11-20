@@ -26,6 +26,7 @@ import {
   THEME_OPTIONS,
   type ThemePreference,
 } from "@/styles/theme";
+import { DEFAULT_VOICE_CHAT_SETTINGS, type VoiceChatSettings } from "@/voice-chat/model";
 import { z } from "zod";
 import { APP_SETTINGS_KEY, LEGACY_SETTINGS_KEY } from "./keys";
 import { migrateAppSettings } from "./migrations";
@@ -98,6 +99,8 @@ export interface AppSettings {
   sidebarChecksDisplay: SidebarChecksDisplay;
   /** Plugin workspace row badge items by `<pluginId>/<itemId>`; a missing key shows. */
   sidebarPluginRowBadgeItems: Record<string, boolean>;
+  /** Where the "Voice chat" shortcut starts: a project and an agent profile. */
+  voiceChat: VoiceChatSettings;
   /** Top-level sidebar rows in display order; empty means the default order, all visible. */
   sidebarNavItems: SidebarNavPreference[];
   /** Sidebar footer items in display order; empty means the default order, all visible. */
@@ -163,6 +166,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sidebarRowItems: DEFAULT_SIDEBAR_ROW_ITEMS,
   sidebarChecksDisplay: DEFAULT_SIDEBAR_CHECKS_DISPLAY,
   sidebarPluginRowBadgeItems: {},
+  voiceChat: DEFAULT_VOICE_CHAT_SETTINGS,
   sidebarNavItems: [],
   sidebarFooterItems: [],
   usage: DEFAULT_USAGE_PREFERENCES,
@@ -263,6 +267,20 @@ const StoredAppSettingsSchema = z
       .optional()
       .catch(DEFAULT_SIDEBAR_CHECKS_DISPLAY),
     sidebarPluginRowBadgeItems: z.record(z.string(), z.boolean()).catch({}),
+    voiceChat: z
+      .object({
+        project: z
+          .object({
+            serverId: z.string(),
+            projectId: z.string(),
+            sourceDirectory: z.string(),
+            displayName: z.string(),
+          })
+          .nullable()
+          .catch(null),
+        profileId: z.string().nullable().catch(null),
+      })
+      .catch(DEFAULT_VOICE_CHAT_SETTINGS),
     sidebarNavItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     sidebarFooterItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     usage: UsagePreferencesSchema,

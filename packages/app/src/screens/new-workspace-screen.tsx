@@ -61,6 +61,7 @@ import {
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionId } from "@/keyboard/keyboard-action-dispatcher";
 import { useFormPreferences } from "@/hooks/use-form-preferences";
+import { useVoiceChatStart } from "./new-workspace/voice-chat-start";
 import type { CreateAgentInitialValues } from "@/hooks/use-agent-form-state";
 import { toErrorMessage } from "@/utils/error-messages";
 import {
@@ -191,6 +192,10 @@ interface NewWorkspaceScreenProps {
   projectId?: string;
   displayName?: string;
   draftId?: string;
+  /** Start voice mode in a new chat once the project and model are settled (`voice=1`). */
+  startVoice?: boolean;
+  /** An agent profile id or name for a voice chat; the host's "Voice" profile when absent. */
+  voiceProfile?: string;
 }
 
 // A terminal launch sends argv, not a message: there is nothing to attach and
@@ -228,6 +233,8 @@ function useWorkspaceIsolation(input: {
   canCreateWorktree: boolean;
   existingWorktrees: readonly ExistingWorktree[];
   projectDirectory: string | null;
+  /** A voice chat opens in the project itself; a remembered worktree choice would slow every start. */
+  preferLocal?: boolean;
 }): WorkspaceIsolationState {
   const { setup, supportsMultiplicity, canCreateWorktree, existingWorktrees } = input;
   // The last isolation choice is remembered alongside the other New Workspace
@@ -235,7 +242,8 @@ function useWorkspaceIsolation(input: {
   // the remembered default until the screen remounts.
   const { preferences } = useFormPreferences();
   const { manualIsolation, existingWorktreePath: chosenPath } = useNewWorkspaceSetupState(setup);
-  const isolation = manualIsolation ?? preferences.isolation ?? "local";
+  const isolation =
+    manualIsolation ?? (input.preferLocal ? "local" : preferences.isolation) ?? "local";
   // A worktree that left the list (removed since it was chosen) is no choice.
   const existingWorktreePath =
     canCreateWorktree && existingWorktrees.some((worktree) => worktree.path === chosenPath)
@@ -912,6 +920,8 @@ export function NewWorkspaceScreen({
   projectId,
   displayName: displayNameProp,
   draftId,
+  startVoice,
+  voiceProfile,
 }: NewWorkspaceScreenProps) {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -974,8 +984,11 @@ export function NewWorkspaceScreen({
   // value reads live from preferences until the user manually picks
   // something in this screen, so the async preferences load doesn't race a
   // frozen useState initializer.
-  const { preferences: formPreferences, updatePreferences: updateFormPreferences } =
-    useFormPreferences();
+  const {
+    preferences: formPreferences,
+    isLoading: formPreferencesLoading,
+    updatePreferences: updateFormPreferences,
+  } = useFormPreferences();
   const { config: daemonConfig } = useDaemonConfig(selectedServerId);
   const terminalProfiles: readonly TerminalProfile[] = useMemo(
     () => resolveTerminalProfiles(daemonConfig?.terminalProfiles),
@@ -1137,6 +1150,7 @@ export function NewWorkspaceScreen({
     canCreateWorktree,
     existingWorktrees,
     projectDirectory: selectedSourceDirectory,
+    preferLocal: startVoice,
   });
 
   const branchSuggestionsQuery = useQuery({
@@ -1428,6 +1442,20 @@ export function NewWorkspaceScreen({
     ],
   );
 
+  const { autoStartVoice, takeVoicePreferencesToRestore } = useVoiceChatStart({
+    startVoice,
+    voiceProfile,
+    serverId: selectedServerId,
+    composerState,
+    formPreferences,
+    formPreferencesLoading,
+    hasProject: selectedSourceDirectory !== null,
+    clientReady,
+    isPending,
+    isTerminalLaunch,
+    setErrorMessage,
+  });
+
   // Voice mode belongs to an agent: create the workspace with its first agent and no message,
   // the same request a typed first message makes, then hand the agent to voice mode.
   const handleCreateAgentForVoice = useCallback(async () => {
@@ -1444,6 +1472,9 @@ export function NewWorkspaceScreen({
       if (outcome === "background") {
         setPendingAction(null);
       }
+      // A voice chat borrows the profile's model; the next New workspace keeps the user's own.
+      const remembered = takeVoicePreferencesToRestore();
+      if (remembered) await updateFormPreferences(() => remembered);
       return agent.id;
     } catch (error) {
       const message = toErrorMessage(error);
@@ -1457,6 +1488,7 @@ export function NewWorkspaceScreen({
     createChatAgent,
     launchTarget,
     selectedSourceDirectory,
+    takeVoicePreferencesToRestore,
     toast,
     updateFormPreferences,
   ]);
@@ -1722,6 +1754,7 @@ export function NewWorkspaceScreen({
       isPaneFocused={isScreenFocused}
       onSubmitMessage={handleSubmitNewWorkspace}
       createAgentForVoice={handleCreateAgentForVoice}
+      autoStartVoice={autoStartVoice}
       allowEmptySubmit={true}
       submitButtonAccessibilityLabel={t("newWorkspace.create")}
       submitButtonTestID="workspace-create-submit"

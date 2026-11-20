@@ -1028,6 +1028,11 @@ interface ComposerProps {
    * start before the first turn. Only a draft chat in an existing workspace passes it.
    */
   createAgentForVoice?: () => Promise<string>;
+  /**
+   * Starts voice mode once, as soon as it can, as if the voice mode button was pressed. The
+   * owner turns it true when everything the first agent needs (project, model) is settled.
+   */
+  autoStartVoice?: boolean;
   /** Called when a message is about to be sent (any path: keyboard, dictation, queued). */
   onMessageSent?: () => void;
   onComposerHeightChange?: (height: number) => void;
@@ -1354,6 +1359,7 @@ function ComposerContentImpl({
   onFocusInput,
   commandDraft,
   createAgentForVoice,
+  autoStartVoice = false,
   onMessageSent,
   onComposerHeightChange,
   onAttentionInputFocus,
@@ -2122,6 +2128,14 @@ function ComposerContentImpl({
       toastErrorRef,
     });
   }, [agentId, hasAgent, isConnected, serverId, voice, voiceAgentCreator]);
+
+  const autoStartedVoiceRef = useRef(false);
+  useEffect(() => {
+    if (!autoStartVoice || autoStartedVoiceRef.current) return;
+    if (!voice || !isConnected || !hasVoiceTarget || voice.isVoiceSwitching) return;
+    autoStartedVoiceRef.current = true;
+    handleToggleRealtimeVoice();
+  }, [autoStartVoice, handleToggleRealtimeVoice, hasVoiceTarget, isConnected, voice]);
 
   const handleEditQueuedMessage = useCallback(
     (id: string) => {
