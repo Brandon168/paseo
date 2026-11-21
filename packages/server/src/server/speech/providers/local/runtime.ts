@@ -43,6 +43,8 @@ export interface InitializedLocalSpeech {
   } | null;
   availability: LocalSpeechAvailability;
   cleanup: () => void;
+  /** Like cleanup, but lets sessions already running finish first (used on reconfigure). */
+  retire?: () => void;
 }
 
 function resolveConfiguredLocalModels(speechConfig: PaseoSpeechConfig | null): ResolvedLocalModels {
@@ -206,6 +208,9 @@ export async function initializeLocalSpeechServices(params: {
   const cleanup = () => {
     workerClient?.shutdown();
   };
+  const retire = () => {
+    workerClient?.retire();
+  };
 
   return {
     turnDetectionService,
@@ -221,5 +226,6 @@ export async function initializeLocalSpeechServices(params: {
       : null,
     availability: getLocalSpeechAvailability(speechConfig),
     cleanup,
+    retire,
   };
 }

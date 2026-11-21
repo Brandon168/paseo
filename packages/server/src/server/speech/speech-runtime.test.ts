@@ -278,6 +278,34 @@ describe("createSpeechService settings changes", () => {
     await runtime.stop();
   });
 
+  it("retires the replaced local runtime on reconfigure and shuts it down on stop", async () => {
+    const calls: string[] = [];
+    initializeLocalSpeechServicesMock.mockResolvedValueOnce({
+      ...localSpeech({ dictationStt: createStubStt("dictation-local"), defaultModelIds: [] }),
+      cleanup: () => calls.push("first.cleanup"),
+      retire: () => calls.push("first.retire"),
+    });
+    const runtime = createSpeechService({
+      logger: pino({ level: "silent" }),
+      speechConfig: dictationOnly,
+    });
+    runtime.start();
+    await runtime.ready;
+
+    initializeLocalSpeechServicesMock.mockResolvedValueOnce({
+      ...localSpeech({ dictationStt: createStubStt("dictation-local-2"), defaultModelIds: [] }),
+      cleanup: () => calls.push("second.cleanup"),
+      retire: () => calls.push("second.retire"),
+    });
+    runtime.reconfigure({ speechConfig: dictationOnly });
+    await vi.waitFor(() => expect(calls).toContain("first.retire"));
+    // A live voice session may still use the first worker: it must not be shut down yet.
+    expect(calls).not.toContain("first.cleanup");
+
+    await runtime.stop();
+    expect(calls).toEqual(["first.retire", "second.cleanup", "first.cleanup"]);
+  });
+
   it("refuses to delete a model an enabled feature uses", async () => {
     initializeLocalSpeechServicesMock.mockResolvedValue(
       localSpeech({

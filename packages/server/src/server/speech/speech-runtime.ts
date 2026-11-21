@@ -374,6 +374,9 @@ export function createSpeechService(
     defaultModelIds: LocalSpeechModelId[];
   } | null = null;
   let localCleanup = () => {};
+  let localRetire = () => {};
+  // Replaced local runtimes still draining live sessions; stop() shuts them down.
+  const retiredLocalCleanups = new Set<() => void>();
   let localVoiceTtsProvider: TextToSpeechProvider | null = null;
 
   let missingLocalModelIds: LocalSpeechModelId[] = [];
@@ -501,6 +504,7 @@ export function createSpeechService(
     });
 
     const previousLocalCleanup = localCleanup;
+    const previousLocalRetire = localRetire;
     turnDetectionService = nextOpenAiSpeech.turnDetectionService;
     sttService = nextOpenAiSpeech.sttService;
     ttsService = nextOpenAiSpeech.ttsService;
@@ -508,7 +512,11 @@ export function createSpeechService(
     localModelConfig = nextLocalSpeech.localModelConfig;
     localVoiceTtsProvider = nextLocalSpeech.localVoiceTtsProvider;
     localCleanup = nextLocalSpeech.cleanup;
-    previousLocalCleanup();
+    localRetire = nextLocalSpeech.retire ?? nextLocalSpeech.cleanup;
+    // Live voice sessions keep the worker they started on; shutting it down here made
+    // a voice chat deaf after any speech setting changed (it recovered only on restart).
+    retiredLocalCleanups.add(previousLocalCleanup);
+    previousLocalRetire();
 
     await refreshMissingLocalModels();
 
@@ -732,6 +740,10 @@ export function createSpeechService(
       monitorTimeout = null;
     }
     localCleanup();
+    for (const cleanupRetired of retiredLocalCleanups) {
+      cleanupRetired();
+    }
+    retiredLocalCleanups.clear();
     await modelLibrary?.stop();
     await backgroundDownloadPromise?.catch(() => undefined);
     backgroundDownloadPromise = null;

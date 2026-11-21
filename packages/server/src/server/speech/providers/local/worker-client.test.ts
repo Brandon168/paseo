@@ -374,6 +374,56 @@ describe("LocalSpeechWorkerClient", () => {
     await expect(stoppedPromise).resolves.toEqual([]);
   });
 
+  it("keeps a live VAD session on its worker after retire, then exits when it closes", async () => {
+    const { client, workers } = createClient();
+    const provider = new WorkerBackedTurnDetectionProvider(client);
+    const session = provider.createSession({ logger: pino({ level: "silent" }) });
+    const connect = session.connect();
+    const createRequest = workers[0].sent[0];
+    workers[0].respond(createRequest, { requiredSampleRate: 16000 });
+    await connect;
+
+    // A speech reconfigure replaces the client while the voice chat is live.
+    client.retire();
+    expect(workers[0].kills).toBe(0);
+
+    session.appendPcm16(Buffer.alloc(320));
+    expect(workers).toHaveLength(1);
+    const append = workers[0].sent.at(-1);
+    expect(append).toMatchObject({ type: "session.append", sessionId: createRequest.sessionId });
+    workers[0].respond(append!);
+
+    const started = once(session as EventEmitter, "speech_started");
+    workers[0].emitWorkerMessage({
+      type: "session.speech_started",
+      sessionId: createRequest.sessionId,
+    });
+    await expect(started).resolves.toEqual([]);
+
+    session.close();
+    const close = workers[0].sent.at(-1);
+    expect(close).toMatchObject({ type: "session.close" });
+    workers[0].respond(close!);
+    await waitForMicrotasks();
+    expect(workers[0].kills).toBe(1);
+    expect(workers).toHaveLength(1);
+  });
+
+  it("shuts down at once when retired with no sessions and never respawns", async () => {
+    const { client, workers } = createClient();
+    const first = client.synthesizeSpeech("first");
+    workers[0].respond(workers[0].sent[0], {
+      audio: bufferToWorkerBytes(Buffer.from([1])),
+      format: "pcm;rate=24000",
+    });
+    await first;
+
+    client.retire();
+    expect(workers[0].kills).toBe(1);
+    await expect(client.synthesizeSpeech("late")).rejects.toThrow(/retired/);
+    expect(workers).toHaveLength(1);
+  });
+
   it("kills an idle worker and respawns on later use", async () => {
     const { client, workers } = createClient({ idleTtlMs: 5 });
 

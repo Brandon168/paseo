@@ -190,6 +190,7 @@ export class LocalSpeechWorkerClient {
   private inFlightRequests = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly intentionalWorkerCloses = new WeakSet<LocalSpeechWorkerProcess>();
+  private retired = false;
 
   constructor(options: LocalSpeechWorkerClientOptions) {
     this.config = options.config;
@@ -283,10 +284,42 @@ export class LocalSpeechWorkerClient {
   closeSession(sessionId: string): void {
     this.activeSessionIds.delete(sessionId);
     this.sessionEmitters.delete(sessionId);
-    void this.sendRequest({ type: "session.close", sessionId }).catch(() => {
-      // Closing is best-effort; the parent already dropped the session.
-    });
+    void this.sendRequest({ type: "session.close", sessionId })
+      .catch(() => {
+        // Closing is best-effort; the parent already dropped the session.
+      })
+      .finally(() => {
+        this.shutdownIfRetiredAndDrained();
+      });
     this.scheduleIdleShutdownIfReady();
+  }
+
+  /**
+   * Stops handing this client out without cutting off the sessions already using it.
+   * A speech reconfigure replaces the client while a voice chat may hold a live
+   * turn-detection session on it; shutting down here would leave that session sending
+   * audio to a fresh worker that never created it, and the chat would stop hearing the
+   * user until voice was restarted. The worker exits once its last session closes.
+   */
+  retire(): void {
+    if (this.retired) {
+      return;
+    }
+    this.retired = true;
+    if (this.activeSessionIds.size === 0) {
+      this.shutdown();
+      return;
+    }
+    this.logger.info(
+      { workerPid: this.workerPid, activeSessionCount: this.activeSessionIds.size },
+      "Local speech worker retired; draining active sessions",
+    );
+  }
+
+  private shutdownIfRetiredAndDrained(): void {
+    if (this.retired && this.activeSessionIds.size === 0 && this.worker) {
+      this.shutdown();
+    }
   }
 
   shutdown(): void {
@@ -313,6 +346,10 @@ export class LocalSpeechWorkerClient {
   }
 
   private sendRequest<T = void>(input: LocalSpeechWorkerRequestInput): Promise<T> {
+    if (this.retired && !this.worker) {
+      // A retired client never respawns: a new worker would not know the old sessions.
+      return Promise.reject(new Error(`Local speech worker retired: ${input.type}`));
+    }
     const worker = this.ensureWorker();
     const requestId = randomUUID();
     const message = { ...input, requestId } as LocalSpeechWorkerRequest;
