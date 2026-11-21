@@ -5,9 +5,32 @@ export type HtmlPreviewNavigationKind = "initialDocument" | "fragment" | "blocke
 
 const INITIAL_DOCUMENT_URLS = new Set(["about:blank", "about:srcdoc", ""]);
 
-export function htmlPreviewNavigationKind(url: string): HtmlPreviewNavigationKind {
+/** `baseUrl` with one trailing slash, or null when the caller did not set one. */
+function baseDocumentUrl(baseUrl: string | undefined): string | null {
+  if (!baseUrl) return null;
+  return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+}
+
+function withoutHash(url: string): string {
+  const at = url.indexOf("#");
+  return at === -1 ? url : url.slice(0, at);
+}
+
+/**
+ * `baseUrl` (a trusted HTTPS origin) makes the WebView's initial document URL that origin instead
+ * of an inert about: URL, so a page can have a secure context. Only that exact origin document is
+ * the initial load; every other URL is still refused, and a later load of the same base is a
+ * repeat, not a new document.
+ */
+export function htmlPreviewNavigationKind(
+  url: string,
+  baseUrl?: string,
+): HtmlPreviewNavigationKind {
   if (INITIAL_DOCUMENT_URLS.has(url)) return "initialDocument";
+  const base = baseDocumentUrl(baseUrl);
+  if (base && (url === base || url === base.slice(0, -1))) return "initialDocument";
   if (url.startsWith("about:blank#") || url.startsWith("about:srcdoc#")) return "fragment";
+  if (base && withoutHash(url) === base) return "fragment";
   return "blocked";
 }
 
@@ -17,6 +40,7 @@ export function htmlPreviewNavigationKind(url: string): HtmlPreviewNavigationKin
  */
 export function useHtmlPreviewNavigationGuard(
   document: string,
+  baseUrl?: string,
 ): (request: { url: string }) => boolean {
   // Latched per document rather than once for the lifetime of the WebView: the
   // file pane re-renders with new content on every live-file refresh, and each of
@@ -32,13 +56,13 @@ export function useHtmlPreviewNavigationGuard(
   }, [active]);
   return useCallback(
     ({ url }: { url: string }) => {
-      const navigationKind = htmlPreviewNavigationKind(url);
+      const navigationKind = htmlPreviewNavigationKind(url, baseUrl);
       if (navigationKind === "fragment") return true;
       if (navigationKind === "blocked") return false;
       if (loadedDocumentRef.current === document) return false;
       loadedDocumentRef.current = document;
       return true;
     },
-    [document],
+    [baseUrl, document],
   );
 }

@@ -12,6 +12,13 @@ export interface HtmlFrameHandle {
 export interface HtmlFrameProps {
   html: string;
   csp?: HtmlFrameCsp;
+  /**
+   * A trusted HTTPS origin to load the document from on native (default `about:blank`). A real
+   * origin gives the page a secure context, which APIs such as WebCodecs require; relative URLs
+   * resolve there. Ignored on web, where the frame stays a sandboxed `srcdoc` with an opaque
+   * origin. Navigation away is still refused.
+   */
+  baseUrl?: string;
   autoHeight?: { min?: number; max?: number } | false;
   height?: number;
   fill?: boolean;

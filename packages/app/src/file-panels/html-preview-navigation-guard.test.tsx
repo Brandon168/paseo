@@ -8,9 +8,9 @@ import { useHtmlPreviewNavigationGuard } from "./html-preview-navigation";
 
 const DOCUMENT = "<html><body>report</body></html>";
 
-function renderGuard(initialActive: boolean) {
+function renderGuard(initialActive: boolean, baseUrl?: string) {
   let active = initialActive;
-  const view = renderHook(() => useHtmlPreviewNavigationGuard(DOCUMENT), {
+  const view = renderHook(() => useHtmlPreviewNavigationGuard(DOCUMENT, baseUrl), {
     wrapper: ({ children }: { children: ReactNode }) => (
       <RetainedPanelActivity active={active}>{children}</RetainedPanelActivity>
     ),
@@ -32,6 +32,14 @@ describe("useHtmlPreviewNavigationGuard", () => {
     expect(guard.navigate("about:blank")).toBe(false);
     expect(guard.navigate("https://example.com/leak")).toBe(false);
     expect(guard.navigate("about:blank#section")).toBe(true);
+  });
+
+  it("loads a trusted base URL once and still refuses navigation away", () => {
+    const guard = renderGuard(true, "https://screen.7ven.org/");
+    expect(guard.navigate("https://screen.7ven.org/")).toBe(true);
+    expect(guard.navigate("https://screen.7ven.org/")).toBe(false);
+    expect(guard.navigate("https://screen.7ven.org/other")).toBe(false);
+    expect(guard.navigate("https://screen.7ven.org/#anchor")).toBe(true);
   });
 
   it("loads the document again in the WebView that shows after the panel was hidden", () => {

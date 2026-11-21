@@ -215,6 +215,13 @@ export interface HtmlFrameProps {
   /** A full document or a fragment. Paseo adds the doctype, CSP, viewport and a bootstrap script first. */
   html: string;
   csp?: HtmlFrameCsp;
+  /**
+   * A trusted HTTPS origin to load the document from on native (default `about:blank`). A real
+   * origin gives the page a secure context, which APIs such as WebCodecs require; relative URLs
+   * resolve there. Ignored on web, where the frame stays a sandboxed `srcdoc`. Navigation away is
+   * still refused.
+   */
+  baseUrl?: string;
   /** Size to the content, clamped to `min`/`max` px (default `{ min: 80, max: 1400 }`). `false` uses `height`. */
   autoHeight?: { min?: number; max?: number } | false;
   /** Height in px when `autoHeight` is false, and the starting height before the first measure. */
