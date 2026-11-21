@@ -145,6 +145,13 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Why:** Starting a spoken conversation took five taps (app, drawer, New workspace, model, voice mode). One entry point now opens a new chat that is already listening.
 - **Notes:** The route does the work: `/new?voice=1` (deep link `paseo://new?voice=1`, optional `&profile=<id or name>`) waits for the project, host connection and model, applies the profile, creates the first agent with no message and starts voice mode. Entry points: a second iOS quick action and Android launcher shortcut, "Voice chat", next to New Workspace (native build needed), and the link for an iOS Shortcut. Settings → General → Voice chat chooses the project and the profile; the defaults are what New workspace would pick, and the host's profile named "Voice", else the normal default. A voice chat opens in the project directory, not a remembered worktree, and the user's remembered New workspace model is restored after the agent exists. While voice is on, the composer's model and profile picker stays at the left of the listening bar (voice mode used to cover it), so a harder question is one tap away. Voice mode on an existing chat by link is not built. Needs voice mode set up on the host; the microphone path is only testable on a device.
 
+### Voice keeps hearing after a speech setting changes
+
+- **Status:** fork-only
+- **Commits:** `35e8adcc4`
+- **Why:** Changing any speech setting during a voice chat shut down the local turn-detection worker under the live session; its audio then went to a fresh worker that silently ignored it, so the chat stopped hearing the user until voice was stopped and resumed.
+- **Notes:** Reconfigure now retires the replaced worker client (`LocalSpeechWorkerClient.retire()`): live sessions keep their worker, which exits when the last one closes; a retired client never respawns, and `stop()` still shuts down every runtime. Upstream main has the same bug (checked 27c126d35); candidate for an upstream issue/PR. Agent-issue AI-0075.
+
 ### Name an agent from its first message or first spoken words
 
 - **Status:** fork-only
