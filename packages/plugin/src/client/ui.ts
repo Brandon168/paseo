@@ -192,6 +192,61 @@ export declare const Loading: ComponentType;
 /** Render a local document URL in an isolated frame. */
 export declare const DocumentFrame: ComponentType<{ url: string; testID?: string }>;
 
+export interface HtmlFrameCsp {
+  /**
+   * Origins (optionally with a path prefix ending in "/") the page may load scripts, styles,
+   * images, fonts and media from: "https://host[:port][/path/]", with an optional leading "*." on
+   * the host. Anything else is dropped and reported through `onError`.
+   */
+  resourceDomains?: readonly string[];
+  /**
+   * Origins the page may reach with fetch, XHR, WebSocket and EventSource: "https://..." or
+   * "wss://...", same rules. Default: none.
+   */
+  connectDomains?: readonly string[];
+}
+
+export interface HtmlFrameHandle {
+  /** Deliver a JSON-serializable value (4 MB at most) to the page as a `message` event. */
+  postMessage(message: unknown): void;
+}
+
+export interface HtmlFrameProps {
+  /** A full document or a fragment. Paseo adds the doctype, CSP, viewport and a bootstrap script first. */
+  html: string;
+  csp?: HtmlFrameCsp;
+  /** Size to the content, clamped to `min`/`max` px (default `{ min: 80, max: 1400 }`). `false` uses `height`. */
+  autoHeight?: { min?: number; max?: number } | false;
+  /** Height in px when `autoHeight` is false, and the starting height before the first measure. */
+  height?: number;
+  /** Fill the parent (`flex: 1`), for a full-screen host. Overrides `height` and `autoHeight`. */
+  fill?: boolean;
+  /** Scroll inside the frame. Default false when auto-sizing (unless content outgrows `max`), true otherwise. */
+  scrollEnabled?: boolean;
+  /** When false the native view is unmounted and a same-size placeholder kept. Default true. */
+  active?: boolean;
+  /** The page's measured content height in px, before clamping. */
+  onContentHeight?(height: number): void;
+  /** Every JSON value the page posts with `window.parent.postMessage`. */
+  onMessage?(message: unknown): void;
+  /** Script errors in the page, refused messages and CSP entries that were dropped. */
+  onError?(message: string): void;
+  onLoad?(): void;
+  testID?: string;
+}
+
+/**
+ * Run HTML in an isolated, sandboxed frame: no storage, cookies or navigation, and network only to
+ * the origins in `csp`. The page sees `document.documentElement.dataset.paseoPlatform` ("ios",
+ * "android" or "web") and talks to the host with `window.parent.postMessage` on every platform;
+ * the host talks back with `ref.postMessage`. A message the host posts before the page loads is
+ * held until it has, but the page may still register its listener later, so start with a handshake
+ * from the page.
+ */
+export declare const HtmlFrame: ForwardRefExoticComponent<
+  HtmlFrameProps & RefAttributes<HtmlFrameHandle>
+>;
+
 export interface MarkdownProps {
   children: string;
 }
