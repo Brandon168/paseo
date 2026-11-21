@@ -156,6 +156,30 @@ describe("collapseTurns", () => {
     });
     expect(expanded.hostIdByHiddenRowId.size).toBe(0);
   });
+  it("keeps a plugin card that replaced a tool call visible when the turn folds", () => {
+    const toolView: StreamItem = {
+      kind: "plugin",
+      id: "genui/call-1/0",
+      sourceId: "call-1",
+      sourceKind: "tool_call",
+      timestamp: at,
+      pluginId: "genui",
+      pluginItemId: "call-1/0",
+      itemKind: "genui-mcp-app",
+      version: 1,
+      data: {},
+    };
+    const items: StreamItem[] = [
+      user("u1"),
+      shell("before"),
+      toolView,
+      shell("after"),
+      reply("done"),
+    ].map((item) => Object.assign(item, { turnId: "same-run" }));
+    const result = collapse(items);
+    expect(ids(result.tail)).toEqual(["u1", "turn-summary:u1", "genui/call-1/0", "done"]);
+  });
+
   it("keeps lifecycle events and compaction recognizable beside a semantic action summary", () => {
     const create = shell("create");
     if (create.payload.source !== "agent") throw new Error("Expected agent tool");

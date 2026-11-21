@@ -100,7 +100,15 @@ function summaryRow(
 }
 
 function staysVisibleWhenCollapsed(item: StreamItem): boolean {
-  return isTurnTrigger(item) || item.kind === "compaction";
+  return isTurnTrigger(item) || item.kind === "compaction" || isPluginToolView(item);
+}
+
+/**
+ * A plugin card that replaced a tool call (an MCP App view, for example) is the result the user
+ * asked for, not working detail, so folding the turn leaves it in the chat.
+ */
+function isPluginToolView(item: StreamItem): boolean {
+  return item.kind === "plugin" && item.sourceKind === "tool_call";
 }
 
 function isAssistantReply(item: StreamItem): boolean {
