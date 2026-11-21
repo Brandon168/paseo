@@ -170,6 +170,13 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Commits:** `ac1649c39`
 - **Why:** Diagnosing interrupt and echo problems needed the actual audio the detector saw. Off by default.
 
+### Plugin HtmlFrame
+
+- **Status:** fork-only
+- **Commits:** `20e9d25ef`, `fdfc407cb`, `2ce1fd613`
+- **Why:** Plugins had no way to run agent-written HTML as an app: `DocumentFrame` has scripts off, so the genui plugin's inline ` ```app ` blocks and MCP Apps views could not render on the native app. `HtmlFrame` (from `@getpaseo/plugin/client/ui`) is a sandboxed HTML view with a validated CSP origin allowlist, an auto-height measure and a `window.parent.postMessage` bridge that behaves the same on web, desktop, iOS and Android (Discussions #4867, #5834, #7437).
+- **Notes:** Reuses the file preview hardening (`html-preview-csp.ts`, the native navigation guard). A `srcdoc` iframe inherits its embedder's CSP; neither the daemon web UI, the desktop `paseo://` handler nor `index.html` sets one, so allowed CDN scripts load, but a reverse proxy that adds a CSP header to the app page would block them. Native WebView behaviour is covered by DOM tests of the bootstrap shim, not run on a device. Plugins feature-detect `ui.HtmlFrame`.
+
 ## Open upstream pull requests
 
 ### Voice: the transcript decides what interrupts a reply
