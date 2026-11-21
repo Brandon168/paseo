@@ -42,6 +42,13 @@ describe("useHtmlPreviewNavigationGuard", () => {
     expect(guard.navigate("https://screen.7ven.org/#anchor")).toBe(true);
   });
 
+  it("does not latch on an inert URL reported before the base document", () => {
+    const guard = renderGuard(true, "https://screen.7ven.org/");
+    expect(guard.navigate("about:blank")).toBe(true);
+    expect(guard.navigate("https://screen.7ven.org/")).toBe(true);
+    expect(guard.navigate("https://screen.7ven.org/")).toBe(false);
+  });
+
   it("loads the document again in the WebView that shows after the panel was hidden", () => {
     const guard = renderGuard(true);
     expect(guard.navigate("about:blank")).toBe(true);

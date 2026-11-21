@@ -5,6 +5,11 @@ export type HtmlPreviewNavigationKind = "initialDocument" | "fragment" | "blocke
 
 const INITIAL_DOCUMENT_URLS = new Set(["about:blank", "about:srcdoc", ""]);
 
+/** The inert URLs a WebView may report before or around the host document. */
+export function isInertInitialDocument(url: string): boolean {
+  return INITIAL_DOCUMENT_URLS.has(url);
+}
+
 /** `baseUrl` with one trailing slash, or null when the caller did not set one. */
 function baseDocumentUrl(baseUrl: string | undefined): string | null {
   if (!baseUrl) return null;
@@ -56,6 +61,9 @@ export function useHtmlPreviewNavigationGuard(
   }, [active]);
   return useCallback(
     ({ url }: { url: string }) => {
+      // With a base URL, the inert URL can be reported before the real document. Let it through
+      // without latching, so the base URL behind it is still accepted as the initial document.
+      if (baseUrl && isInertInitialDocument(url)) return true;
       const navigationKind = htmlPreviewNavigationKind(url, baseUrl);
       if (navigationKind === "fragment") return true;
       if (navigationKind === "blocked") return false;
