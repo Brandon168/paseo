@@ -659,6 +659,18 @@ read. See the [public file panel reference](../public-docs/plugins/reference.md#
 the author API, selection, `DocumentFrame`, and the version requirement. The examples live in
 `plugin-examples/pdf-panel` and `plugin-examples/markdown-panel`.
 
+## HtmlFrame
+
+`HtmlFrame` (`packages/app/src/html-frame`) runs HTML in a sandboxed frame for plugins; the
+[public reference](../public-docs/plugins/reference.md#htmlframe) owns the author API. It reuses the
+file preview hardening: `file-panels/html-preview-csp.ts` builds the policy,
+`html-preview-navigation.ts` guards the native WebView. Web uses a `sandbox="allow-scripts"`
+`srcdoc` iframe, native a WebView, and one bootstrap script (`bootstrap.ts`) gives the page the
+same `window.parent.postMessage` contract on both. A `srcdoc` iframe inherits its embedder's CSP.
+Neither the daemon's web UI (`web-ui.ts`), nor the desktop `paseo://` protocol handler, nor
+`index.html` sets one, so allowed CDN scripts load; a reverse proxy that adds a
+`Content-Security-Policy` header to the app page would also bind the frame and block them.
+
 ## Contribute buttons
 
 Header buttons and composer pills share the client-only descriptor and registration lifecycle in

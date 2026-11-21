@@ -1557,6 +1557,40 @@ hook 的重新读取会采用磁盘上的版本，因此下一次写入会覆盖
 - [PDF 面板](https://github.com/getpaseo/paseo/tree/main/plugin-examples/pdf-panel)：`useFileUrl` 搭配 `Loading` 和 `DocumentFrame`。
 - [Markdown 面板](https://github.com/getpaseo/paseo/tree/main/plugin-examples/markdown-panel)：打包的 CodeMirror 编辑器，只读取一次、用 `writeText` 保存并处理冲突，在原生平台上显示只读文本。
 
+## HtmlFrame {#htmlframe}
+
+从 `@getpaseo/plugin/client/ui` 导入 `HtmlFrame`，即可在所有平台的隔离框架中运行由智能体编写或来自第三方的 HTML。它适用于任何界面，不限于文件面板。
+
+```tsx
+import { HtmlFrame, type HtmlFrameHandle } from "@getpaseo/plugin/client/ui";
+
+const ref = useRef<HtmlFrameHandle>(null);
+<HtmlFrame
+  ref={ref}
+  html={html}
+  csp={{ resourceDomains: ["https://cdn.jsdelivr.net/npm/"] }}
+  onMessage={(message) => console.log(message)}
+/>;
+```
+
+| 属性                  | 含义                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `html`                | 完整文档或片段。Paseo 会在其前面加上 doctype、策略、viewport 和引导脚本。                    |
+| `csp.resourceDomains` | 脚本、样式、图片、字体和媒体可使用的来源：`https://host[:port][/path/]`，主机可带前导 `*.`。 |
+| `csp.connectDomains`  | fetch、XHR、WebSocket 和 EventSource 可访问的来源：`https://…` 或 `wss://…`。默认没有。      |
+| `autoHeight`          | 以 px 为单位的 `{ min, max }`（默认 `{ min: 80, max: 1400 }`），或 `false` 以使用 `height`。 |
+| `height`、`fill`      | 固定高度，或填满父容器（`flex: 1`），用于全屏宿主。                                          |
+| `scrollEnabled`       | 是否在框架内滚动。自动高度时默认关闭（内容超过 `max` 时开启），其他情况默认开启。            |
+| `active`              | `false` 会卸载原生视图，并保留与上次高度相同的占位。                                         |
+| `onContentHeight`     | 页面测得的内容高度（px），未经限制。                                                         |
+| `onMessage`           | 页面通过 `window.parent.postMessage(value, "*")` 发送的每个 JSON 值。                        |
+| `onError`             | 脚本错误、被拒绝的消息，以及被丢弃的 `csp` 条目。                                            |
+| `onLoad`、`testID`    | 加载回调和测试标识。                                                                         |
+
+`ref.postMessage(value)` 会把 JSON 值作为 `message` 事件交给页面，事件的 `source` 是 `window.parent`。两个方向每条消息上限都是 4 MB。页面加载完成之前发送的消息会先保留，待加载完成后再投递；但页面可能更晚才注册监听器，所以应让页面先发一条消息表明自己已就绪。
+
+页面不能使用存储、Cookie、弹窗、表单、下载或导航，除 `csp` 中的来源外也没有网络。页面可以读取 `document.documentElement.dataset.paseoPlatform`，其值为 `"ios"`、`"android"` 或 `"web"`。只接受 `https` 和 `wss` 来源；仅通配符、仅协议、`http`、IP 地址和带引号的条目都会被丢弃，并通过 `onError` 报告。浏览器无法阻止页面导航自身：在 Web 上，框架会被替换为空白页并通过 `onError` 报告；在原生平台上，该导航会被拒绝。页面在框架内能读取到的任何内容，都可以发送到 `connectDomains` 中的来源，所以只列出用户已批准的来源。
+
 ## Command Center 条目 {#command-center-items}
 
 在 macOS 上按 **⌘K**，在 Windows 和 Linux 上按 **Ctrl+K** 打开 Command Center，然后搜索条目标题。
