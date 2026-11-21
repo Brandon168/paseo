@@ -12,21 +12,40 @@
 // no parent access, and no way to read any file but itself. Native narrows it
 // further in html-preview.tsx, because a WebView can refuse navigation outside CSP — see the
 // caveat there on why that is a mitigation rather than a guarantee.
-const POLICY = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline' 'unsafe-eval' blob:",
-  "style-src 'unsafe-inline'",
-  "img-src data: blob:",
-  "font-src data:",
-  "media-src data: blob:",
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-src 'none'",
-  "object-src 'none'",
-].join("; ");
+/** Extra origins a caller may open on top of the preview policy. Already validated by the caller. */
+export interface PreviewCspOrigins {
+  /** Added to script-src, style-src, img-src, font-src and media-src. */
+  resourceSources?: readonly string[];
+  /** Replaces `connect-src 'none'`. */
+  connectSources?: readonly string[];
+}
 
-const META = `<meta http-equiv="Content-Security-Policy" content="${POLICY}">`;
+function withSources(base: string, sources: readonly string[] | undefined): string {
+  return sources && sources.length > 0 ? `${base} ${sources.join(" ")}` : base;
+}
+
+export function buildPreviewPolicy(origins: PreviewCspOrigins = {}): string {
+  const { resourceSources, connectSources } = origins;
+  return [
+    "default-src 'none'",
+    withSources("script-src 'unsafe-inline' 'unsafe-eval' blob:", resourceSources),
+    withSources("style-src 'unsafe-inline'", resourceSources),
+    withSources("img-src data: blob:", resourceSources),
+    withSources("font-src data:", resourceSources),
+    withSources("media-src data: blob:", resourceSources),
+    connectSources && connectSources.length > 0
+      ? `connect-src ${connectSources.join(" ")}`
+      : "connect-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-src 'none'",
+    "object-src 'none'",
+  ].join("; ");
+}
+
+function policyMeta(origins?: PreviewCspOrigins): string {
+  return `<meta http-equiv="Content-Security-Policy" content="${buildPreviewPolicy(origins)}">`;
+}
 
 // The policy must reach the parser before any markup the document declares, and it
 // only counts if it lands in `<head>` — once the parser has moved on to `<body>`, a
@@ -45,11 +64,18 @@ const META = `<meta http-equiv="Content-Security-Policy" content="${POLICY}">`;
 // the parser ignores wherever it appears. Standards mode is guaranteed, the policy
 // is always the first element and therefore always in the head, and no part of the
 // document has to be parsed to place it.
-const PROLOGUE = `<!doctype html>${META}`;
 
 // Left where it is, a BOM would sit mid-document and render as a zero-width space.
 const BOM = "\uFEFF";
 
-export function withPreviewCsp(html: string): string {
-  return PROLOGUE + (html.startsWith(BOM) ? html.slice(BOM.length) : html);
+/**
+ * `head` is host-authored markup (never page content) placed right after the policy, so the policy
+ * stays the first element. `origins` come from a validator, never straight from a page.
+ */
+export function withPreviewCsp(
+  html: string,
+  options: { origins?: PreviewCspOrigins; head?: string } = {},
+): string {
+  const prologue = `<!doctype html>${policyMeta(options.origins)}${options.head ?? ""}`;
+  return prologue + (html.startsWith(BOM) ? html.slice(BOM.length) : html);
 }

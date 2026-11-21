@@ -46,4 +46,27 @@ describe("withPreviewCsp", () => {
 
     expect(withPreviewCsp(source).endsWith(source)).toBe(true);
   });
+
+  it("keeps the closed policy when no origins are given", () => {
+    expect(withPreviewCsp("<p>x</p>")).toContain("connect-src 'none'");
+    expect(withPreviewCsp("<p>x</p>")).not.toContain("https://");
+  });
+
+  it("opens only the origins it is handed and puts host head markup after the policy", () => {
+    const output = withPreviewCsp("<p>x</p>", {
+      origins: {
+        resourceSources: ["https://cdn.example.com"],
+        connectSources: ["wss://a.example.com"],
+      },
+      head: "<style>x{}</style>",
+    });
+    expect(output).toContain(
+      "script-src 'unsafe-inline' 'unsafe-eval' blob: https://cdn.example.com;",
+    );
+    expect(output).toContain("connect-src wss://a.example.com;");
+    expect(output.indexOf("Content-Security-Policy")).toBeLessThan(
+      output.indexOf("<style>x{}</style>"),
+    );
+    expect(output.endsWith("<style>x{}</style><p>x</p>")).toBe(true);
+  });
 });
