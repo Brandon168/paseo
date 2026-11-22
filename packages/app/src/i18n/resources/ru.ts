@@ -3222,6 +3222,10 @@ export const ru: TranslationResources = {
         showAll: "Показать все",
         hideAll: "Скрыть все",
         hiddenCount: "Скрыто: {{count}}",
+        filterAll: "Все",
+        filterEnabled: "Включённые",
+        filterDisabled: "Отключённые",
+        noFilterMatches: "Ни одна модель не соответствует текущим фильтрам",
       },
       installation: {
         title: "Установка",

@@ -15,6 +15,7 @@ import { SettingsSection } from "@/components/settings";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton, paneContentToolbarIconSize } from "@/components/ui/pane-content-toolbar";
 import { SearchField } from "@/components/ui/search-field";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
@@ -35,6 +36,8 @@ const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destruc
 const ThemedTextInput = withUnistyles(AdaptiveTextInput, (theme: Theme) => ({
   placeholderTextColor: theme.colors.foregroundMuted,
 }));
+
+type ModelVisibilityFilter = "all" | "enabled" | "disabled";
 
 function rankModels<T>(items: T[], query: string, fields: (item: T) => string[]): T[] {
   if (!query) return items;
@@ -67,6 +70,7 @@ export function ProviderModels({
   const { refresh } = useProvidersSnapshot(serverId);
   const toast = useToast();
   const [query, setQuery] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState<ModelVisibilityFilter>("all");
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const [pendingHiddenModels, setPendingHiddenModels] = useState<string[] | null>(null);
@@ -95,12 +99,35 @@ export function ProviderModels({
   });
   discoveredCacheRef.current = cache;
 
+  const visibilityFilterOptions = useMemo(
+    () => [
+      {
+        value: "all" as const,
+        label: t("settings.providers.models.filterAll"),
+        testID: "provider-models-filter-all",
+      },
+      {
+        value: "enabled" as const,
+        label: t("settings.providers.models.filterEnabled"),
+        testID: "provider-models-filter-enabled",
+      },
+      {
+        value: "disabled" as const,
+        label: t("settings.providers.models.filterDisabled"),
+        testID: "provider-models-filter-disabled",
+      },
+    ],
+    [t],
+  );
+
   // Search shows only beside the provider's own models; a query typed then must not hide custom ones.
   const q = discovered ? query.trim() : "";
-  const filteredDiscovered = useMemo(
-    () => rankModels(discoveredModels, q, (m) => [m.label, m.id, m.description ?? ""]),
-    [discoveredModels, q],
-  );
+  const filteredDiscovered = useMemo(() => {
+    const matches = rankModels(discoveredModels, q, (m) => [m.label, m.id, m.description ?? ""]);
+    if (visibilityFilter === "all") return matches;
+    const showHidden = visibilityFilter === "disabled";
+    return matches.filter((model) => hiddenModelIds.has(model.id) === showHidden);
+  }, [discoveredModels, hiddenModelIds, q, visibilityFilter]);
   const filteredCustom = useMemo(
     () => rankModels(additionalModels, q, (m) => [m.label, m.id]),
     [additionalModels, q],
@@ -204,6 +231,11 @@ export function ProviderModels({
     [filteredDiscovered, hiddenModelIds],
   );
 
+  const noDiscoveredMatches =
+    visibilityFilter === "all"
+      ? t("settings.providers.models.noSearchMatches")
+      : t("settings.providers.models.noFilterMatches");
+
   let discoveredBody: React.ReactNode;
   if (discoveredModels.length === 0) {
     discoveredBody = (
@@ -214,7 +246,7 @@ export function ProviderModels({
       </MutedRow>
     );
   } else if (filteredDiscovered.length === 0) {
-    discoveredBody = <MutedRow>{t("settings.providers.models.noSearchMatches")}</MutedRow>;
+    discoveredBody = <MutedRow>{noDiscoveredMatches}</MutedRow>;
   } else {
     discoveredBody = filteredDiscovered.map((model, index) => (
       <DiscoveredModelRow
@@ -250,12 +282,20 @@ export function ProviderModels({
       {discovered ? (
         <>
           <View style={styles.searchRail}>
-            <SearchField
-              value={query}
-              onChangeText={setQuery}
-              placeholder={t("settings.providers.models.searchPlaceholder")}
-              clearAccessibilityLabel={t("sessions.actions.clearSearch")}
-              testID="provider-settings-search"
+            <View style={styles.searchField}>
+              <SearchField
+                value={query}
+                onChangeText={setQuery}
+                placeholder={t("settings.providers.models.searchPlaceholder")}
+                clearAccessibilityLabel={t("sessions.actions.clearSearch")}
+                testID="provider-settings-search"
+              />
+            </View>
+            <SegmentedControl
+              options={visibilityFilterOptions}
+              value={visibilityFilter}
+              onValueChange={setVisibilityFilter}
+              testID="provider-models-visibility-filter"
             />
           </View>
           <View style={styles.visibilityRail}>
@@ -338,25 +378,38 @@ function DiscoveredModelRow({
       style={[styles.modelRow, !first && settingsStyles.rowBorder]}
       testID={`provider-model-row-${model.id}`}
     >
-      <Text style={[styles.modelTitle, hidden && styles.hiddenModelText]} numberOfLines={1}>
-        {model.label}
-      </Text>
-      <Text style={styles.monoHint} numberOfLines={1} selectable dataSet={CODE_SURFACE_DATASET}>
-        {model.id}
-      </Text>
-      {model.description ? (
-        <Text style={styles.descriptionInline} numberOfLines={1}>
-          {model.description}
+      {/* Name over id in a column that shrinks, so a long name or id truncates instead of
+          pushing the switch out of the row. */}
+      <View style={styles.modelText}>
+        <Text
+          style={[styles.modelTitle, styles.shrinkText, hidden && styles.hiddenModelText]}
+          numberOfLines={1}
+        >
+          {model.label}
         </Text>
-      ) : null}
-      <View style={styles.modelRowFiller} />
-      <Switch
-        value={!hidden}
-        onValueChange={handleValueChange}
-        disabled={saving}
-        accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
-        testID={`provider-model-visible-${model.id}`}
-      />
+        <Text
+          style={[styles.monoHint, styles.shrinkText]}
+          numberOfLines={1}
+          selectable
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {model.id}
+        </Text>
+        {model.description ? (
+          <Text style={styles.descriptionStacked} numberOfLines={1}>
+            {model.description}
+          </Text>
+        ) : null}
+      </View>
+      <View style={styles.modelSwitch}>
+        <Switch
+          value={!hidden}
+          onValueChange={handleValueChange}
+          disabled={saving}
+          accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
+          testID={`provider-model-visible-${model.id}`}
+        />
+      </View>
     </View>
   );
 }
@@ -499,7 +552,15 @@ const ADD_SNAP_POINTS = ["40%"];
 const styles = StyleSheet.create((theme) => ({
   searchRail: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: theme.spacing[2],
     marginBottom: theme.spacing[3],
+  },
+  searchField: {
+    flexGrow: 1,
+    flexBasis: 220,
+    flexDirection: "row",
   },
   visibilityRail: {
     flexDirection: "row",
@@ -544,10 +605,21 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     flexShrink: 0,
   },
-  descriptionInline: {
+  modelText: {
     flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  shrinkText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  descriptionStacked: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
+  },
+  modelSwitch: {
+    flexShrink: 0,
   },
   customModelText: {
     flexShrink: 1,

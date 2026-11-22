@@ -3182,6 +3182,10 @@ export const ko: TranslationResources = {
         showAll: "모두 표시",
         hideAll: "모두 숨기기",
         hiddenCount: "{{count}}개 숨김",
+        filterAll: "전체",
+        filterEnabled: "활성화됨",
+        filterDisabled: "비활성화됨",
+        noFilterMatches: "현재 필터와 일치하는 모델이 없습니다",
       },
       installation: {
         title: "설치",

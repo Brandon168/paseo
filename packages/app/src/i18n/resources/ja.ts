@@ -3196,6 +3196,10 @@ export const ja: TranslationResources = {
         showAll: "すべて表示",
         hideAll: "すべて非表示",
         hiddenCount: "{{count}} 件非表示",
+        filterAll: "すべて",
+        filterEnabled: "有効",
+        filterDisabled: "無効",
+        noFilterMatches: "現在のフィルターに一致するモデルがありません",
       },
       installation: {
         title: "インストール",

@@ -3237,6 +3237,10 @@ export const fr: TranslationResources = {
         showAll: "Tout afficher",
         hideAll: "Tout masquer",
         hiddenCount: "{{count}} masqués",
+        filterAll: "Tous",
+        filterEnabled: "Activés",
+        filterDisabled: "Désactivés",
+        noFilterMatches: "Aucun modèle ne correspond aux filtres actuels",
       },
       installation: {
         title: "Installation",
