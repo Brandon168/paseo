@@ -49,7 +49,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Status:** fork-only
 - **Commits:** `e54de8dae`, `c9dc18fac`, `f40ddeeef`
 - **Why:** Model discovery keeps every provider running, but the picker only needs the models I actually use, so models and whole providers can be hidden without turning discovery off.
-- **Notes:** Choices are stored in the daemon config (`providers.<id>.hiddenModels`), so they apply to every client. The server still lists everything it discovers. 0.17.1 replaced the provider sheet; the merge re-lands the toggles on its new provider models section. An All / Enabled / Disabled filter combines with search, and Show all / Hide all act only on the listed models.
+- **Notes:** Choices are stored in the daemon config (`providers.<id>.hiddenModels`), so they apply to every client. The server still lists everything it discovers. 0.17.1 replaced the provider sheet and 0.17.2 made its Models section a scrollable list with the count and refresh in its header; the toggles live in that list, with the All / Enabled / Disabled filter and Show all / Hide all above it. The filter combines with search, and Show all / Hide all act only on the listed models.
 
 ### Wider desktop model picker with optional grouping
 
@@ -63,14 +63,14 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Status:** fork-only
 - **Commits:** `7ebbd3e6f`, `a7190ece5`
 - **Why:** With several providers and routes, a conversation needs to show which model produced each reply, not just which model is selected now.
-- **Notes:** The daemon stamps every assistant message with provider, model id and thinking option; the footer shows picker name · route · thinking level. Settings → Chat → "Show model on each turn", on by default, per device. Older clients ignore the added fields.
+- **Notes:** The daemon stamps every assistant message with provider, model id and thinking option; the footer shows picker name · route · thinking level. Settings → Chat → "Show model on each turn", on by default, per device. Older clients ignore the added fields. Upstream 0.17.2 also adds a "Model" row to the turn stats card; the card leaves that row out when this footer label is showing, so the model appears once.
 
 ### Cache hit rate, session tokens and plan usage in the context card
 
 - **Status:** fork-only
 - **Commits:** `c4816a66c`, `c8fb4506d`
 - **Why:** The context window card showed what was in the window but not how often the prompt cache hit, how many tokens the session had used, or whether the session was covered by a subscription.
-- **Notes:** Shows last-call and session cache hit rate (amber below 50%), session token total, and "Included in plan" for subscription sessions. OpenCode v2 sessions now report usage, so plan limits appear for them too. There is no plan source for Vercel AI Gateway, DeepSeek direct or NVIDIA keys.
+- **Notes:** Shows last-call and session cache hit rate (amber below 50%), session token total, and "Included in plan" for subscription sessions. OpenCode v2 sessions now report usage, so plan limits appear for them too. There is no plan source for Vercel AI Gateway, DeepSeek direct or NVIDIA keys. Upstream 0.17.2 reports its own session rows (tokens, last-reply cache rate, cost) for Claude, OpenCode v2, Pi, Oh My Pi and plugin providers; those show first, and the fork's block drops the last-call rate and the token breakdown when the provider already reports a cache or tokens row. The session cache rate and the plan label stay, and providers without session rows keep the whole block.
 
 ### Plugin agent tools for OpenCode agents
 
@@ -84,13 +84,13 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Status:** fork-only
 - **Commits:** `69e04a8e0`
 - **Why:** On OpenCode 2 the provider diagnostic ran `opencode auth list`, which starts `opencode serve --service` when none is running. A starting service resumes every session marked running, so a chat live on Paseo's own helper server got a second runner (anomalyco/opencode#51213): duplicate tool calls and a reply cut short.
-- **Notes:** OpenCode 1 keeps the auth check. Candidate for an upstream pull request.
+- **Notes:** OpenCode 1 keeps the auth check. Candidate for an upstream pull request. Upstream 0.17.2 passes the diagnostic a context argument, so `getDiagnostic(context?, { checkAuth })` takes the fork's option second.
 
-### Inherit the OpenCode v2 default model
+### Inherit the OpenCode v2 default model and agent
 
 - **Status:** fork-only
-- **Commits:** `9859a88fe`
-- **Why:** The daemon used a hardcoded default instead of the default model in OpenCode's own config.
+- **Commits:** `9859a88fe`, `c4390df4d`
+- **Why:** The daemon used a hardcoded default instead of the default model in OpenCode's own config, and a session created without a mode hardcoded the `build` agent, which fails once that agent is renamed or disabled. With no mode set, OpenCode now picks its configured default agent.
 
 ### Build only matching workspaces for a workspace list query
 

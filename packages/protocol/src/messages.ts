@@ -334,6 +334,7 @@ export type MutableDaemonConfig = z.infer<typeof MutableDaemonConfigSchema>;
 export type MutableDaemonConfigPatch = z.infer<typeof MutableDaemonConfigPatchSchema>;
 import type {
   AgentCapabilityFlags,
+  AgentMetric,
   AgentModelDefinition,
   AgentMode,
   AgentPermissionRequest,
@@ -472,6 +473,7 @@ export const ProviderSnapshotEntrySchema = z.object({
   label: z.string().optional(),
   description: z.string().optional(),
   iconSvg: z.string().optional(),
+  docsUrl: z.string().optional(),
   defaultModeId: z.string().nullable().optional(),
 });
 
@@ -528,6 +530,12 @@ const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
   lastCallInputTokens: z.number().optional(),
   lastCallCachedInputTokens: z.number().optional(),
   lastCallCacheWriteTokens: z.number().optional(),
+});
+
+export const AgentMetricSchema: z.ZodType<AgentMetric> = z.object({
+  label: z.string(),
+  value: z.string(),
+  tone: z.enum(["default", "ok", "warning", "danger"]).optional(),
 });
 
 const AgentPermissionUpdateSchema = z.record(z.string(), z.unknown());
@@ -823,6 +831,7 @@ export const AgentStreamEventPayloadSchema = z.discriminatedUnion("type", [
     provider: AgentProviderSchema,
     turnId: z.string().optional(),
     usage: AgentUsageSchema.optional(),
+    metrics: z.array(AgentMetricSchema).optional(),
   }),
   z.object({
     type: z.literal("turn_failed"),
@@ -935,6 +944,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   /** Opaque. Changes whenever the accounts this agent reports usage for can change. */
   usageScopeKey: z.string().optional(),
   lastUsage: AgentUsageSchema.optional(),
+  sessionMetrics: z.array(AgentMetricSchema).optional(),
   lastError: z.string().optional(),
   title: z.string().nullable(),
   labels: z.record(z.string(), z.string()).default({}),
@@ -1194,6 +1204,9 @@ export const SetVoiceModeMessageSchema = z.object({
 
 export const ActiveTurnBehaviorSchema = z.enum(["interrupt", "steer"]);
 export type ActiveTurnBehavior = z.infer<typeof ActiveTurnBehaviorSchema>;
+/** An agent sender may also queue: wait until the recipient's running turn ends. */
+export const AgentActiveTurnBehaviorSchema = z.enum(["interrupt", "steer", "queue"]);
+export type AgentActiveTurnBehavior = z.infer<typeof AgentActiveTurnBehaviorSchema>;
 
 export const SendAgentMessageSchema = z.object({
   type: z.literal("send_agent_message"),
@@ -1371,7 +1384,8 @@ export const SendAgentMessageRequestSchema = z.object({
   sourceAgentServerId: z.string().min(1).optional(),
   sessionMode: z.string().optional(),
   messageId: z.string().optional(), // Client-provided ID for deduplication
-  activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
+  /** queue needs an agent sender. */
+  activeTurnBehavior: AgentActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
 });
@@ -3895,6 +3909,8 @@ export const ServerInfoStatusPayloadSchema = z
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
         agentMessageBatching: z.boolean().optional(),
+        // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove gate after 2027-05-22.
+        agentActiveTurnBehaviors: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -4845,6 +4861,8 @@ export const AgentTimelineEntryPayloadSchema = z.object({
   seqEnd: z.number().int().nonnegative(),
   sourceSeqRanges: z.array(AgentTimelineSeqRangeSchema),
   collapsed: z.array(z.enum(["assistant_merge", "reasoning_merge", "tool_lifecycle", "identity"])),
+  /** Set on the row that carries the turn footer: the turn's last assistant message, else its last tool call. */
+  turnMetrics: z.array(AgentMetricSchema).optional(),
 });
 
 export const FetchAgentTimelineResponseMessageSchema = z.object({
@@ -5240,6 +5258,10 @@ export const SendAgentMessageResponseMessageSchema = z.object({
     agentId: z.string(),
     accepted: z.boolean(),
     deliveryStatus: z.literal("queued").optional(),
+    /** The behavior applied to a queued agent message. */
+    activeTurnBehavior: AgentActiveTurnBehaviorSchema.optional(),
+    /** What happens to a queued agent message, and how the sender can change it. */
+    guidance: z.string().optional(),
     error: z.string().nullable(),
   }),
 });
@@ -6788,6 +6810,8 @@ export const UsageReportEntrySchema = z.object({
   sourceId: z.string(),
   sourceLabel: z.string(),
   icon: z.string().optional(),
+  /** Host hint for whether this report starts shown until the user overrides it. Absent means true. */
+  defaultEnabled: z.boolean().optional(),
   report: UsageReportSchema,
   // Successful completion time; fetchedAt remains the attempt timestamp for ordering.
   successfulAt: z.string().optional(),

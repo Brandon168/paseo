@@ -721,6 +721,7 @@ export class PluginService {
           id: source.id,
           label: source.label,
           icon: source.icon,
+          providers: source.providers ?? (source.provider ? [source.provider] : undefined),
           discover: async (scope) => {
             const launch =
               scope.kind === "global" && source.provider
@@ -782,6 +783,7 @@ export class PluginService {
           id: provider.id,
           label: provider.label,
           description: provider.description,
+          docsUrl: provider.docsUrl,
           command: provider.command,
           requiresConfiguration: provider.requiresConfiguration,
           status: provider.hasStatus

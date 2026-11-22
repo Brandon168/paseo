@@ -26,6 +26,7 @@ import {
   getAgentStreamEventTurnId,
   type AgentCapabilityFlags,
   type AgentClient,
+  type AgentClientDiagnosticContext,
   type AgentCreateSessionOptions,
   type AgentDraftControls,
   type AgentOptionControl,
@@ -1807,7 +1808,12 @@ export class OpenCodeAgentClient implements AgentClient {
     await this.serverManager.shutdown();
   }
 
-  async getDiagnostic(options: { checkAuth?: boolean } = {}): Promise<{ diagnostic: string }> {
+  // The context is unused here: this report does not read the installation row. `checkAuth` is the
+  // fork's: OpenCode 2 must not get `opencode auth list` (see runtime-client.ts).
+  async getDiagnostic(
+    _context?: AgentClientDiagnosticContext,
+    options: { checkAuth?: boolean } = {},
+  ): Promise<{ diagnostic: string }> {
     try {
       const launch = await resolveProviderLaunch({
         commandConfig: this.runtimeSettings?.command,

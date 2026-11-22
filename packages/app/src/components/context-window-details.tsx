@@ -1,7 +1,7 @@
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import type { AgentUsage as AgentUsageFields } from "@getpaseo/protocol/agent-types";
+import type { AgentMetric, AgentUsage as AgentUsageFields } from "@getpaseo/protocol/agent-types";
 import { AgentUsage, useAgentUsage } from "@/usage";
 import {
   buildContextWindowInsights,
@@ -9,6 +9,7 @@ import {
   type TokenRowKey,
 } from "./context-window-insights";
 import { formatTokenCount } from "./context-window-meter.utils";
+import { MetricsList } from "./metrics-list";
 
 interface ContextWindowDetailsProps {
   serverId: string;
@@ -21,6 +22,8 @@ interface ContextWindowDetailsProps {
   sessionCost: string | null;
   /** The agent's last reported usage: cache hit rates and token totals come from it. */
   usage?: AgentUsageFields | null;
+  /** What the provider reports about the session. A reported cost replaces `sessionCost`. */
+  sessionMetrics: AgentMetric[];
   /** The hover card and tooltip title themselves; the sheet's header carries the title instead. */
   showTitle: boolean;
   /** Whether the usage cards have a Refresh button; without one they show their freshness. */
@@ -28,8 +31,8 @@ interface ContextWindowDetailsProps {
 }
 
 /**
- * What the context window meter opens: how full the window is, then the usage of the agent's
- * account. The desktop hover card, the native wide tooltip, and the compact sheet all render it.
+ * What the context window meter opens: how full the window is, what the provider reports about the
+ * session, then the usage of the agent's account. The desktop hover card, the native wide tooltip, and the compact sheet all render it.
  */
 export function ContextWindowDetails({
   serverId,
@@ -37,14 +40,20 @@ export function ContextWindowDetails({
   context,
   sessionCost,
   usage,
+  sessionMetrics,
   showTitle,
   refreshable,
 }: ContextWindowDetailsProps) {
   const { t } = useTranslation();
+  const providerReportsCost = hasMetric(sessionMetrics, /^cost$/i);
+  // The provider's own cache and token rows replace the same figures from `usage`, so a session
+  // never shows them twice. Providers without session metrics keep the full cache and token block.
   const insights = buildContextWindowInsights(usage);
+  const providerReportsCache = hasMetric(sessionMetrics, /^cache/i);
+  const providerReportsTokens = hasMetric(sessionMetrics, /^tokens$/i);
   // A cost of zero on an agent that resolves to a plan account means its subscription covers it.
   const onPlan = useAgentUsage(serverId, agentId).kind === "ready";
-  const showIncluded = !sessionCost && onPlan && usage?.totalCostUsd === 0;
+  const showIncluded = !sessionCost && !providerReportsCost && onPlan && usage?.totalCostUsd === 0;
   return (
     <>
       <View style={styles.summary}>
@@ -64,14 +73,21 @@ export function ContextWindowDetails({
         ) : (
           <Text style={styles.detail}>{t("contextWindow.noData")}</Text>
         )}
-        {sessionCost ? (
+        {sessionCost && !providerReportsCost ? (
           <Text style={styles.detail}>{t("contextWindow.sessionCost", { cost: sessionCost })}</Text>
         ) : null}
         {showIncluded ? (
           <Text style={styles.detail}>{t("contextWindow.includedInPlan")}</Text>
         ) : null}
       </View>
-      {insights ? <ContextInsights insights={insights} /> : null}
+      {sessionMetrics.length > 0 ? <MetricsList metrics={sessionMetrics} /> : null}
+      {insights ? (
+        <ContextInsights
+          insights={insights}
+          showLastCall={!providerReportsCache}
+          showTokens={!providerReportsTokens}
+        />
+      ) : null}
       <AgentUsage serverId={serverId} agentId={agentId} refreshable={refreshable} />
     </>
   );
@@ -85,21 +101,38 @@ const TOKEN_LABEL_KEYS: Record<TokenRowKey, string> = {
   reasoning: "contextWindow.tokenReasoning",
 };
 
-function ContextInsights({ insights }: { insights: ContextWindowInsights }) {
+function hasMetric(metrics: AgentMetric[], label: RegExp): boolean {
+  return metrics.some((metric) => label.test(metric.label));
+}
+
+function ContextInsights({
+  insights,
+  showLastCall,
+  showTokens,
+}: {
+  insights: ContextWindowInsights;
+  showLastCall: boolean;
+  showTokens: boolean;
+}) {
   const { t } = useTranslation();
+  const lastCallHitRate = showLastCall ? insights.lastCallHitRate : null;
+  const tokens = showTokens ? insights.tokens : [];
+  if (lastCallHitRate === null && insights.sessionHitRate === null && tokens.length === 0) {
+    return null;
+  }
   return (
     <>
       <View style={styles.divider} />
       <View style={styles.summary} testID="context-window-insights">
-        {insights.lastCallHitRate !== null || insights.sessionHitRate !== null ? (
+        {lastCallHitRate !== null || insights.sessionHitRate !== null ? (
           <Text style={styles.sectionTitle}>{t("contextWindow.cacheTitle")}</Text>
         ) : null}
-        {insights.lastCallHitRate !== null ? (
+        {lastCallHitRate !== null ? (
           <Text style={insights.lastCallMissed ? styles.warning : styles.detail}>
             {t(
               insights.lastCallMissed ? "contextWindow.cacheMiss" : "contextWindow.cacheLastCall",
               {
-                rate: Math.round(insights.lastCallHitRate),
+                rate: Math.round(lastCallHitRate),
               },
             )}
           </Text>
@@ -109,10 +142,10 @@ function ContextInsights({ insights }: { insights: ContextWindowInsights }) {
             {t("contextWindow.cacheSession", { rate: Math.round(insights.sessionHitRate) })}
           </Text>
         ) : null}
-        {insights.tokens.length > 0 ? (
+        {tokens.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>{t("contextWindow.tokensTitle")}</Text>
-            {insights.tokens.map((row) => (
+            {tokens.map((row) => (
               <View key={row.key} style={styles.tokenRow}>
                 <Text style={styles.detail}>{t(TOKEN_LABEL_KEYS[row.key])}</Text>
                 <Text style={styles.detail}>{formatTokenCount(row.value)}</Text>

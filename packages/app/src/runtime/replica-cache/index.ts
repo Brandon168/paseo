@@ -2,6 +2,7 @@ import { findMountedWindowStart } from "@/agent-stream/history-window";
 import { z } from "zod";
 import {
   AgentBackgroundWorkSummarySchema,
+  AgentMetricSchema,
   AgentStatusSchema,
   AgentTimelineItemPayloadSchema,
   ForgeWebSchema,
@@ -20,6 +21,7 @@ import {
 import {
   isUnreconciledLocalUserMessage,
   type AgentToolCallData,
+  type AssistantMessageItem,
   type StreamItem,
 } from "@/types/stream";
 import type { UnsettledTurn } from "@/timeline/turn-liveness";
@@ -137,6 +139,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     messageId: z.string().optional(),
     // Absent on caches written before the daemon stamped the answering model.
     model: AssistantMessageModelSchema.optional(),
+    turnMetrics: z.array(AgentMetricSchema).optional(),
     text: z.string(),
     // Reject old caches containing display fragments; refetch the complete source text.
   }),
@@ -171,6 +174,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     ...TimelineItemBaseShape,
     kind: z.literal("tool_call"),
     provider: AgentProviderSchema,
+    turnMetrics: z.array(AgentMetricSchema).optional(),
     item: AgentTimelineItemPayloadSchema.refine((item) => item.type === "tool_call"),
   }),
   z.strictObject({
@@ -474,6 +478,17 @@ function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
   }
 }
 
+/** The optional fields an assistant message may carry, left out when absent. */
+function assistantExtras(item: {
+  model?: AssistantMessageItem["model"];
+  turnMetrics?: AssistantMessageItem["turnMetrics"];
+}) {
+  return {
+    ...(item.model ? { model: item.model } : {}),
+    ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
+  };
+}
+
 function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
   const base = timelineBase(item);
   switch (item.kind) {
@@ -490,7 +505,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         ...(item.messageId ? { messageId: item.messageId } : {}),
-        ...(item.model ? { model: item.model } : {}),
+        ...assistantExtras(item),
         text: item.text,
       };
     case "thought":
@@ -525,6 +540,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         provider: item.payload.data.provider,
+        ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
         item: serializeAgentToolCall(item.payload.data),
       };
     case "plugin":
@@ -584,7 +600,7 @@ function deserializeBuiltinTimelineItem(
         ...base,
         kind: item.kind,
         ...(item.messageId ? { messageId: item.messageId } : {}),
-        ...(item.model ? { model: item.model } : {}),
+        ...assistantExtras(item),
         text: item.text,
       };
     case "thought":
@@ -621,6 +637,7 @@ function deserializeBuiltinTimelineItem(
       return {
         ...base,
         kind: item.kind,
+        ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
         payload: {
           source: "agent",
           data: {

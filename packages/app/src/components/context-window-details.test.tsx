@@ -3,7 +3,7 @@
  */
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { AgentUsage } from "@getpaseo/protocol/agent-types";
+import type { AgentMetric, AgentUsage } from "@getpaseo/protocol/agent-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ContextWindowDetails } from "@/components/context-window-details";
 
@@ -53,7 +53,11 @@ vi.mock("@/usage", () => ({
 
 const CONTEXT = { percentage: 44, usedTokens: 439_000, maxTokens: 1_000_000 };
 
-function renderDetails(usage: AgentUsage | null, sessionCost: string | null = null) {
+function renderDetails(
+  usage: AgentUsage | null,
+  sessionCost: string | null = null,
+  sessionMetrics: AgentMetric[] = [],
+) {
   return render(
     <ContextWindowDetails
       serverId="host"
@@ -61,6 +65,7 @@ function renderDetails(usage: AgentUsage | null, sessionCost: string | null = nu
       context={CONTEXT}
       sessionCost={sessionCost}
       usage={usage}
+      sessionMetrics={sessionMetrics}
       showTitle
       refreshable={false}
     />,
@@ -119,6 +124,31 @@ describe("ContextWindowDetails", () => {
     expect(screen.queryByText("Cache")).toBeNull();
     expect(screen.queryByText("Session tokens")).toBeNull();
     expect(screen.queryByTestId("context-window-insights")).toBeNull();
+  });
+
+  it("keeps the session cache rate but drops what the provider's own rows already say", () => {
+    renderDetails(OPENCODE_USAGE, null, [
+      { label: "Tokens", value: "56 ↑ · 10K ↓" },
+      { label: "Cache (last reply)", value: "99%", tone: "ok" },
+    ]);
+    expect(screen.getByText("Tokens")).toBeTruthy();
+    expect(screen.getByText("Cache (last reply)")).toBeTruthy();
+    expect(screen.queryByText("Last call 99% cached")).toBeNull();
+    expect(screen.queryByText("Session tokens")).toBeNull();
+    expect(screen.queryByText("Cache read")).toBeNull();
+    expect(screen.getByText("Session 100% cached")).toBeTruthy();
+  });
+
+  it("shows the whole insights block beside provider rows that say nothing about cache or tokens", () => {
+    renderDetails(OPENCODE_USAGE, null, [{ label: "Model", value: "opus" }]);
+    expect(screen.getByText("Last call 99% cached")).toBeTruthy();
+    expect(screen.getByText("Session tokens")).toBeTruthy();
+  });
+
+  it("does not call a session included in the plan when the provider reports its cost", () => {
+    usageView.kind = "ready";
+    renderDetails(OPENCODE_USAGE, null, [{ label: "Cost", value: "$0.42" }]);
+    expect(screen.queryByText("Included in plan")).toBeNull();
   });
 
   it("says the plan covers a zero-cost session only when a plan account resolves", () => {

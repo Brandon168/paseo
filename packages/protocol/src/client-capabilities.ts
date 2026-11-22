@@ -62,6 +62,10 @@ export const CLIENT_CAPS = {
   // playing on detected sound and interrupt only once the transcript has the user's
   // words. Older clients stop only on `isSpeaking: true`, at speech start.
   voiceDeferredBargeIn: "voice_deferred_barge_in",
+  // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after 2027-05-22 once client floor >= v0.17.2.
+  // An agent sender's steer means wait-for-turn-end from clients without it, because older
+  // CLIs and connected hosts send an explicit steer for every default agent send.
+  agentActiveTurnBehaviors: "agent_active_turn_behaviors",
 } as const;
 
 export type ClientCapability = (typeof CLIENT_CAPS)[keyof typeof CLIENT_CAPS];

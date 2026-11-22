@@ -1,3 +1,4 @@
+import type { AgentMetric } from "@getpaseo/protocol/agent-types";
 import React, { memo, useCallback, useMemo, type ReactNode } from "react";
 import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -85,6 +86,7 @@ export const TurnFooter = memo(function TurnFooter({
       items={host.items}
       timing={host.timing}
       startIndex={host.startIndex}
+      turnMetrics={host.turnMetrics}
       supportsTimelineCursor={supportsTimelineCursor}
       serverId={serverId}
       onForkAssistantTurn={onForkAssistantTurn}
@@ -97,6 +99,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   items,
   timing,
   startIndex,
+  turnMetrics,
   supportsTimelineCursor,
   serverId,
   onForkAssistantTurn,
@@ -105,6 +108,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   items: StreamItem[];
   timing?: TurnTiming;
   startIndex: number;
+  turnMetrics?: AgentMetric[];
   supportsTimelineCursor: boolean;
   serverId?: string;
   onForkAssistantTurn?: AssistantTurnForkHandler;
@@ -114,6 +118,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
     items,
     timing,
     startIndex,
+    turnMetrics,
     supportsTimelineCursor,
     onForkAssistantTurn,
   };
@@ -177,6 +182,7 @@ interface CompletedTurnFooterProps {
   items: StreamItem[];
   timing?: TurnTiming;
   startIndex: number;
+  turnMetrics?: AgentMetric[];
   supportsTimelineCursor: boolean;
   modelLabel?: string | null;
   onForkAssistantTurn?: AssistantTurnForkHandler;
@@ -201,10 +207,16 @@ function CompletedTurnFooter({
   items,
   timing,
   startIndex,
+  turnMetrics,
   supportsTimelineCursor,
   modelLabel,
   onForkAssistantTurn,
 }: CompletedTurnFooterProps) {
+  // The footer already names the model that answered, so the stats card leaves out its own row.
+  const shownMetrics = useMemo(
+    () => (modelLabel ? withoutModelMetric(turnMetrics) : turnMetrics),
+    [modelLabel, turnMetrics],
+  );
   const getContent = useCallback(
     () =>
       collectAssistantResponseContentForStreamRenderStrategy({
@@ -236,9 +248,14 @@ function CompletedTurnFooter({
         durationMs={timing?.durationMs}
         modelLabel={modelLabel}
         onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
+        metrics={shownMetrics}
       />
     </View>
   );
+}
+
+function withoutModelMetric(metrics: AgentMetric[] | undefined): AgentMetric[] | undefined {
+  return metrics?.filter((metric) => metric.label.toLowerCase() !== "model");
 }
 
 function TurnFooterRow({ children }: { children: ReactNode }) {

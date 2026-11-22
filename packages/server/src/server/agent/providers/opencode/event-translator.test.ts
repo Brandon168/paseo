@@ -1613,7 +1613,13 @@ describe("OpenCode v2 history reconciliation", () => {
       ),
     ).toEqual([
       { type: "reasoning", text: "thinking" },
-      { type: "assistant_message", text: "answer", messageId: "message" },
+      {
+        type: "assistant_message",
+        text: "answer",
+        messageId: "message",
+        // Replayed history keeps the model OpenCode recorded on the message.
+        model: { provider: "opencode", modelId: "provider/model", thinkingOptionId: null },
+      },
     ]);
   });
   it("emits tool state transitions once and keeps their call identity", async () => {

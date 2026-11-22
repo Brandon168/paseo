@@ -389,7 +389,8 @@ export async function discover(
       keychain: "Claude",
       opencode: "OpenCode",
     }[input.route.store];
-    const fallback = { key: hashAccountKey(JSON.stringify(input.route)), harness, input };
+    const provider = input.route.store === "keychain" ? "claude" : input.route.store;
+    const fallback = { key: hashAccountKey(JSON.stringify(input.route)), harness, provider, input };
     if (credentials.expires !== undefined && credentials.expires <= (lookup.now ?? Date.now)()) {
       accounts.push(fallback);
       continue;
@@ -403,7 +404,7 @@ export async function discover(
       accounts.push(
         "status" in profile
           ? fallback
-          : { ...profile, harness, input: { ...input, accountKey: profile.key } },
+          : { ...profile, harness, provider, input: { ...input, accountKey: profile.key } },
       );
     } catch {
       // Keep the login visible; fetching usage reports the vendor failure.
