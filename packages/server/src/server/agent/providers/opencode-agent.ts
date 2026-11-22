@@ -1597,9 +1597,6 @@ export class OpenCodeAgentClient implements AgentClient {
     config: OpenCodeAgentConfig,
     launchContext?: AgentLaunchContext,
   ): Promise<OpenCodeServerConnection> {
-    // The bridge plugin reads its tool manifest when OpenCode loads it for a directory, which
-    // happens before the session is bound, so plugin tools must be announced first.
-    this.bridge?.announceTools(launchContext?.paseoTools);
     const acquisition = await this.acquireServer(config, launchContext);
     return this.toServerConnection(acquisition, config.cwd);
   }

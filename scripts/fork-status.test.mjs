@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { evaluateEntries, parseForkDocument } from "./fork-status.mjs";
+import {
+  checkForkInvariants,
+  evaluateEntries,
+  parseForkDocument,
+  parseTrackedRefs,
+} from "./fork-status.mjs";
 
 const DOCUMENT = `# What this fork changes
 
@@ -35,9 +43,13 @@ Some prose.
 - **Why:** Upstream declined it.
 `;
 
-function check(entries, { prStates = new Map(), existing = new Set(), upstream = new Set() } = {}) {
+function check(
+  entries,
+  { prStates = new Map(), trackedStates = null, existing = new Set(), upstream = new Set() } = {},
+) {
   return evaluateEntries(entries, {
     prStates,
+    trackedStates,
     commitExists: (sha) => existing.has(sha) || sha.length === 9,
     commitInUpstream: (sha) => upstream.has(sha),
   });
@@ -167,4 +179,121 @@ test("offline (no pull request states) skips PR checks instead of reporting ever
   ];
 
   assert.deepEqual(check(entries, { prStates: null }), []);
+});
+
+test("parses Tracks references including issues, replacement PRs, and discussions", () => {
+  assert.deepEqual(parseTrackedRefs("#3971, #9363, discussion#4867, #3971"), [
+    { kind: "item", number: "3971" },
+    { kind: "item", number: "9363" },
+    { kind: "discussion", number: "4867" },
+  ]);
+});
+
+test("flags retirement when a tracked upstream issue closes as completed or a replacement PR merges", () => {
+  const entries = [
+    {
+      title: "Status ring",
+      line: 10,
+      status: "pr-open",
+      commits: [],
+      pr: "8382",
+      tracks: [{ kind: "item", number: "3971" }],
+      why: "battery",
+    },
+    {
+      title: "Plugin pings",
+      line: 20,
+      status: "pr-open",
+      commits: [],
+      pr: "9352",
+      tracks: [{ kind: "item", number: "9363" }],
+      why: "cpu",
+    },
+    {
+      title: "Schedule wake",
+      line: 30,
+      status: "pr-open",
+      commits: [],
+      pr: "9254",
+      tracks: [
+        { kind: "item", number: "9252" },
+        { kind: "discussion", number: "9118" },
+      ],
+      why: "wakeups",
+    },
+  ];
+  const prStates = new Map([
+    ["8382", { state: "OPEN" }],
+    ["9352", { state: "OPEN" }],
+    ["9254", { state: "OPEN" }],
+  ]);
+  const trackedStates = new Map([
+    ["3971", { kind: "issue", state: "CLOSED", stateReason: "COMPLETED" }],
+    ["9363", { kind: "pr", state: "MERGED", stateReason: null }],
+    ["9252", { kind: "issue", state: "CLOSED", stateReason: "NOT_PLANNED" }],
+  ]);
+
+  const issues = check(entries, { prStates, trackedStates });
+  assert.equal(issues.length, 2);
+  assert.match(issues[0].message, /Tracked issue #3971 closed as completed upstream/);
+  assert.match(issues[1].message, /Tracked PR #9363 merged upstream/);
+});
+
+test("checkForkInvariants catches top-level package-lock version drift and missing fork markers", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "fork-invariants-"));
+  try {
+    mkdirSync(path.join(dir, "packages/cli/bin"), { recursive: true });
+    mkdirSync(path.join(dir, "packages/client/src"), { recursive: true });
+    mkdirSync(path.join(dir, "packages/app"), { recursive: true });
+    mkdirSync(path.join(dir, "packages/protocol"), { recursive: true });
+    mkdirSync(path.join(dir, "packages/server"), { recursive: true });
+    writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ version: "0.17.3", workspaces: ["packages/cli"] }),
+    );
+    writeFileSync(
+      path.join(dir, "package-lock.json"),
+      JSON.stringify({
+        version: "0.17.2",
+        packages: {
+          "": { version: "0.17.3" },
+          "packages/cli": { version: "0.17.3" },
+          "node_modules/zod": { version: "4.6.7" },
+        },
+      }),
+    );
+    writeFileSync(
+      path.join(dir, "packages/cli/package.json"),
+      JSON.stringify({
+        version: "0.17.3",
+        bin: { "paseo-daemon": "bin/paseo-daemon" },
+        dependencies: { zod: "^4.6.7" },
+      }),
+    );
+    writeFileSync(path.join(dir, "packages/cli/bin/paseo-daemon"), "#!/usr/bin/env node\n");
+    writeFileSync(
+      path.join(dir, "packages/client/package.json"),
+      JSON.stringify({ version: "0.17.3", exports: { "./eager-validation": "./dist/x.js" } }),
+    );
+    writeFileSync(path.join(dir, "packages/client/src/eager-validation.ts"), "export {};\n");
+    for (const ws of ["packages/app", "packages/protocol", "packages/server"]) {
+      writeFileSync(
+        path.join(dir, ws, "package.json"),
+        JSON.stringify({ version: "0.17.3", dependencies: { zod: "^4.6.7" } }),
+      );
+    }
+
+    const issues = checkForkInvariants(dir, [
+      {
+        name: "Marker check",
+        path: "packages/client/src/eager-validation.ts",
+        contains: "missing",
+      },
+    ]);
+    assert.equal(issues.length, 2);
+    assert.match(issues[0].message, /Top-level lock\.version is "0\.17\.2", expected "0\.17\.3"/);
+    assert.match(issues[1].message, /missing expected fork marker "missing"/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

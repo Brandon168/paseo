@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Checks FORK.md against the commits in this repo and the real state of the pull requests on
-// getpaseo/paseo. Flags the drift a hand-kept changelog collects: a PR that merged while its entry
-// still says pr-open, a "fork-only" commit upstream already contains, a commit that no longer exists.
+// Checks FORK.md against the commits in this repo, the real state of pull requests and tracked
+// upstream issues/replacement PRs on getpaseo/paseo, and (with --check-invariants) verifies that
+// critical fork features and manifest invariants are still intact in the working tree.
 //
 // Usage: node scripts/fork-status.mjs [--file FORK.md] [--repo getpaseo/paseo] [--upstream origin/main]
-//                                    [--offline] [--json]
+//                                    [--offline] [--check-invariants] [--json]
 //
-// Exit codes: 0 the file matches, 1 FORK.md needs an edit, 2 the check itself could not run.
+// Exit codes: 0 clean, 1 FORK.md or invariants need attention, 2 the check itself could not run.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -19,25 +19,129 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 
 const STATUSES = new Set(["fork-only", "pr-open", "upstream", "dropped"]);
 const STATUSES_WITH_PR = new Set(["pr-open", "upstream"]);
+const ACTIVE_STATUSES = new Set(["fork-only", "pr-open"]);
 
 const FIELD_RE = /^\s*-\s*\*\*([A-Za-z]+):\*\*\s*(.*?)\s*$/;
 const HEADING_RE = /^(#{2,6})\s+(.*?)\s*$/;
 const SHA_RE = /\b([0-9a-f]{7,40})\b/g;
 const PR_RE = /#(\d+)/;
+const TRACKED_RE = /(?:\b(discussion)#(\d+)|(?<![A-Za-z0-9_])#(\d+))/gi;
+
+// Fork-critical files and markers checked by --check-invariants so an upstream merge can never
+// silently drop a fork feature or break workspace manifest/lockfile pins.
+export const FORK_CODE_INVARIANTS = [
+  {
+    name: "Plugin HtmlFrame + baseUrl",
+    path: "packages/app/src/html-frame/index.tsx",
+    contains: "baseUrl",
+  },
+  {
+    name: "Plugin UI HtmlFrame export",
+    path: "packages/plugin/src/client/ui.ts",
+    contains: "HtmlFrame",
+  },
+  {
+    name: "Folded turns keep plugin tool-call views",
+    path: "packages/app/src/agent-stream/turn-collapse/model.ts",
+    contains: "isPluginToolView",
+  },
+  {
+    name: "Provider hiddenModels schema",
+    path: "packages/protocol/src/provider-config.ts",
+    contains: "hiddenModels",
+  },
+  {
+    name: "Provider hiddenModels UI filters",
+    path: "packages/app/src/provider-settings/internal/provider-models.tsx",
+    contains: "hiddenModels",
+  },
+  {
+    name: "Wider desktop model picker route grouping",
+    path: "packages/app/src/provider-selection/model-route-groups.ts",
+  },
+  {
+    name: "Per-turn answering model footer",
+    path: "packages/app/src/agent-stream/turn-model-label.ts",
+  },
+  {
+    name: "Context card cache & plan insights",
+    path: "packages/app/src/components/context-window-insights.ts",
+  },
+  {
+    name: "OpenCode v2 shared helper for BB_THREAD_STORAGE",
+    path: "packages/server/src/server/agent/providers/opencode/v2/configuration.ts",
+    contains: "BB_THREAD_STORAGE",
+  },
+  {
+    name: "Keep opened chats loaded across idle sweeps",
+    path: "packages/server/src/server/agent/agent-manager.ts",
+    contains: "markRuntimeAccessed",
+  },
+  {
+    name: "OpenCode diagnostic no-spawn guard (AI-0064)",
+    path: "packages/server/src/server/agent/providers/opencode-agent.ts",
+    contains: "checkAuth",
+  },
+  {
+    name: "OpenCode v2 default model inheritance",
+    path: "packages/server/src/server/agent/providers/opencode/v2/agent.ts",
+    contains: "model.default",
+  },
+  {
+    name: "Workspace list query pre-filter",
+    path: "packages/server/src/server/workspace-directory.ts",
+    contains: "workspaceIdsMatchingQuery",
+  },
+  {
+    name: "Event-loop delay 100 ms monitor",
+    path: "packages/server/src/server/websocket/event-loop-delay.ts",
+  },
+  {
+    name: "Voice chat shortcut (/new?voice=1)",
+    path: "packages/app/src/screens/new-workspace/voice-chat-start.ts",
+  },
+  {
+    name: "Voice VAD worker retire-on-reconfigure (AI-0075)",
+    path: "packages/server/src/server/speech/providers/local/worker-client.ts",
+    contains: "retire(",
+  },
+  {
+    name: "Voice transcript barge-in (#9438)",
+    path: "packages/server/src/server/session/voice/voice-session.ts",
+    contains: "bargeIn",
+  },
+  {
+    name: "iOS home screen quick actions module",
+    path: "packages/app/modules/paseo-quick-actions/ios/PaseoQuickActionsModule.swift",
+  },
+  {
+    name: "iOS paste-input patch (#7286)",
+    path: "patches/@mattermost+react-native-paste-input+2.0.1.patch",
+  },
+  {
+    name: "iOS native status ring driver (#8382)",
+    path: "packages/app/src/components/status-ring/clock.native.ts",
+  },
+  {
+    name: "Phone photo JPEG normalizer (#9328)",
+    path: "packages/app/src/hooks/picked-image-normalizer.ts",
+  },
+];
 
 function usage() {
   return [
     "Usage: node scripts/fork-status.mjs [options]",
     "",
     "Options:",
-    "  --file <path>      Changelog to check (default: FORK.md at the repo root)",
-    "  --repo <owner/name>  Upstream repo on GitHub (default: getpaseo/paseo)",
-    "  --upstream <ref>   Upstream ref to compare with (default: origin/main)",
-    "  --offline          Skip GitHub; only check commits and the file itself",
-    "  --json             Print machine-readable output",
-    "  -h, --help         Show this help",
+    "  --file <path>         Changelog to check (default: FORK.md at the repo root)",
+    "  --repo <owner/name>   Upstream repo on GitHub (default: getpaseo/paseo)",
+    "  --upstream <ref>      Upstream ref to compare with (default: origin/main)",
+    "  --offline             Skip GitHub; only check commits, file, and invariants",
+    "  --check-invariants    Verify fork manifest/lockfile pins and required code markers",
+    "  --json                Print machine-readable output",
+    "  -h, --help            Show this help",
     "",
-    "Exit codes: 0 clean, 1 FORK.md needs an edit, 2 the check could not run.",
+    "Exit codes: 0 clean, 1 FORK.md or invariants need attention, 2 the check itself could not run.",
   ].join("\n");
 }
 
@@ -47,6 +151,7 @@ function parseArgs(argv) {
     repo: "getpaseo/paseo",
     upstream: "origin/main",
     offline: false,
+    checkInvariants: false,
     json: false,
   };
 
@@ -62,6 +167,7 @@ function parseArgs(argv) {
     else if (arg === "--repo") options.repo = next();
     else if (arg === "--upstream") options.upstream = next();
     else if (arg === "--offline") options.offline = true;
+    else if (arg === "--check-invariants") options.checkInvariants = true;
     else if (arg === "--json") options.json = true;
     else if (arg === "--help" || arg === "-h") {
       process.stdout.write(`${usage()}\n`);
@@ -77,6 +183,20 @@ function parseArgs(argv) {
   }
 
   return options;
+}
+
+export function parseTrackedRefs(value) {
+  const refs = [];
+  const seen = new Set();
+  for (const match of value.matchAll(TRACKED_RE)) {
+    const kind = match[1] ? "discussion" : "item";
+    const number = match[2] ?? match[3];
+    const key = `${kind}:${number}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ kind, number });
+  }
+  return refs;
 }
 
 export function parseForkDocument(markdown) {
@@ -113,6 +233,7 @@ export function parseForkDocument(markdown) {
           status: "",
           commits: [],
           pr: "",
+          tracks: [],
           upstream: "",
           why: "",
           notes: "",
@@ -142,13 +263,21 @@ export function parseForkDocument(markdown) {
       continue;
     }
 
+    if (key === "tracks") {
+      current.tracks = parseTrackedRefs(value);
+      continue;
+    }
+
     if (key in current) current[key] = value;
   }
 
   return entries;
 }
 
-export function evaluateEntries(entries, { prStates, commitExists, commitInUpstream }) {
+export function evaluateEntries(
+  entries,
+  { prStates, trackedStates = null, commitExists, commitInUpstream },
+) {
   const issues = [];
   const report = (level, entry, message) => {
     issues.push({ level, title: entry.title, line: entry.line, message });
@@ -162,6 +291,7 @@ export function evaluateEntries(entries, { prStates, commitExists, commitInUpstr
     checkStatusField(entry, report);
     checkCommits(entry, report, { commitExists, commitInUpstream });
     checkPullRequest(entry, report, prStates);
+    checkTrackedItems(entry, report, trackedStates);
   }
 
   return issues;
@@ -250,6 +380,163 @@ function checkPullRequest(entry, report, prStates) {
   }
 }
 
+function checkTrackedItems(entry, report, trackedStates) {
+  if (!trackedStates || !entry.tracks?.length) return;
+  const status = entry.status.trim().toLowerCase();
+  if (!ACTIVE_STATUSES.has(status)) return;
+
+  for (const ref of entry.tracks) {
+    if (ref.kind === "discussion") continue;
+    const item = trackedStates.get(ref.number);
+    if (!item) {
+      report("warn", entry, `Tracked #${ref.number} not found in the upstream repo`);
+      continue;
+    }
+
+    const state = String(item.state ?? "").toUpperCase();
+    const stateReason = String(item.stateReason ?? "").toUpperCase();
+
+    if (item.kind === "pr" && state === "MERGED") {
+      report(
+        "error",
+        entry,
+        `Tracked PR #${ref.number} merged upstream; verify upstream covers this feature and retire the fork patch`,
+      );
+      continue;
+    }
+
+    if (item.kind === "issue" && state === "CLOSED" && stateReason === "COMPLETED") {
+      report(
+        "error",
+        entry,
+        `Tracked issue #${ref.number} closed as completed upstream; verify upstream covers this feature and retire the fork patch`,
+      );
+    }
+  }
+}
+
+function readJsonInvariant(repoRoot, relPath, fail) {
+  const abs = path.join(repoRoot, relPath);
+  if (!existsSync(abs)) {
+    fail(`Invariant: ${relPath}`, `Missing required file ${relPath}`);
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(abs, "utf8"));
+  } catch (error) {
+    fail(`Invariant: ${relPath}`, `Invalid JSON in ${relPath}: ${String(error)}`);
+    return null;
+  }
+}
+
+function checkLockfileInvariants(repoRoot, fail) {
+  const rootPkg = readJsonInvariant(repoRoot, "package.json", fail);
+  const lock = readJsonInvariant(repoRoot, "package-lock.json", fail);
+  if (!rootPkg || !lock) return;
+
+  const expectedVersion = rootPkg.version;
+  if (lock.version !== expectedVersion) {
+    fail(
+      "Invariant: package-lock.json version",
+      `Top-level lock.version is "${lock.version}", expected "${expectedVersion}"`,
+    );
+  }
+  const rootLockPkg = lock.packages?.[""];
+  if (rootLockPkg?.version !== expectedVersion) {
+    fail(
+      "Invariant: package-lock.json root workspace",
+      `packages[""].version is "${rootLockPkg?.version}", expected "${expectedVersion}"`,
+    );
+  }
+  for (const ws of rootPkg.workspaces ?? []) {
+    const wsPkg = readJsonInvariant(repoRoot, path.join(ws, "package.json"), fail);
+    if (wsPkg && wsPkg.version !== expectedVersion) {
+      fail(
+        `Invariant: ${ws}/package.json`,
+        `Workspace version is "${wsPkg.version}", expected "${expectedVersion}"`,
+      );
+    }
+    const wsLock = lock.packages?.[ws];
+    if (wsLock && wsLock.version !== expectedVersion) {
+      fail(
+        `Invariant: package-lock.json ${ws}`,
+        `Lockfile version for ${ws} is "${wsLock.version}", expected "${expectedVersion}"`,
+      );
+    }
+  }
+  const lockedZod = lock.packages?.["node_modules/zod"]?.version;
+  if (lockedZod !== "4.6.7") {
+    fail(
+      "Invariant: zod lockfile pin",
+      `packages["node_modules/zod"].version is "${lockedZod}", expected "4.6.7"`,
+    );
+  }
+}
+
+function checkManifestPins(repoRoot, fail) {
+  const cliPkg = readJsonInvariant(repoRoot, "packages/cli/package.json", fail);
+  if (cliPkg && cliPkg.bin?.["paseo-daemon"] !== "bin/paseo-daemon") {
+    fail(
+      "Invariant: paseo-daemon bin",
+      'packages/cli/package.json is missing bin["paseo-daemon"] = "bin/paseo-daemon"',
+    );
+  }
+  if (!existsSync(path.join(repoRoot, "packages/cli/bin/paseo-daemon"))) {
+    fail("Invariant: paseo-daemon bin", "Missing packages/cli/bin/paseo-daemon executable");
+  }
+
+  const clientPkg = readJsonInvariant(repoRoot, "packages/client/package.json", fail);
+  if (clientPkg && !clientPkg.exports?.["./eager-validation"]) {
+    fail(
+      "Invariant: eager-validation export",
+      'packages/client/package.json is missing exports["./eager-validation"]',
+    );
+  }
+  if (!existsSync(path.join(repoRoot, "packages/client/src/eager-validation.ts"))) {
+    fail("Invariant: eager-validation export", "Missing packages/client/src/eager-validation.ts");
+  }
+
+  for (const ws of ["packages/app", "packages/cli", "packages/protocol", "packages/server"]) {
+    const pkg = readJsonInvariant(repoRoot, `${ws}/package.json`, fail);
+    if (pkg && pkg.dependencies?.zod !== "^4.6.7") {
+      fail(
+        `Invariant: ${ws} zod pin`,
+        `${ws}/package.json dependencies.zod is "${pkg.dependencies?.zod}", expected "^4.6.7"`,
+      );
+    }
+  }
+}
+
+function checkCodeInvariants(repoRoot, codeInvariants, fail) {
+  for (const check of codeInvariants) {
+    const abs = path.join(repoRoot, check.path);
+    if (!existsSync(abs)) {
+      fail(`Invariant: ${check.name}`, `Missing expected fork file ${check.path}`);
+      continue;
+    }
+    if (check.contains) {
+      const content = readFileSync(abs, "utf8");
+      if (!content.includes(check.contains)) {
+        fail(
+          `Invariant: ${check.name}`,
+          `${check.path} is missing expected fork marker "${check.contains}"`,
+        );
+      }
+    }
+  }
+}
+
+export function checkForkInvariants(repoRoot = REPO_ROOT, codeInvariants = FORK_CODE_INVARIANTS) {
+  const issues = [];
+  const fail = (title, message) => issues.push({ level: "error", title, line: 0, message });
+
+  checkLockfileInvariants(repoRoot, fail);
+  checkManifestPins(repoRoot, fail);
+  checkCodeInvariants(repoRoot, codeInvariants, fail);
+
+  return issues;
+}
+
 function git(args) {
   return execFileSync("git", args, {
     cwd: REPO_ROOT,
@@ -331,6 +618,49 @@ function fetchPullRequests(repo, wanted) {
   return states;
 }
 
+function fetchTrackedItems(repo, prStates, wantedNumbers) {
+  const tracked = new Map();
+  for (const number of new Set(wantedNumbers)) {
+    if (!/^\d+$/.test(number)) continue;
+    if (prStates?.has(number)) {
+      const pr = prStates.get(number);
+      tracked.set(number, {
+        kind: "pr",
+        state: String(pr.state ?? "").toUpperCase(),
+        stateReason: null,
+        title: pr.title ?? "",
+      });
+      continue;
+    }
+    try {
+      const raw = execFileSync("gh", ["api", `repos/${repo}/issues/${number}`], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const data = JSON.parse(raw);
+      if (data.pull_request) {
+        const merged = Boolean(data.pull_request.merged_at);
+        tracked.set(number, {
+          kind: "pr",
+          state: merged ? "MERGED" : String(data.state ?? "").toUpperCase(),
+          stateReason: null,
+          title: data.title ?? "",
+        });
+      } else {
+        tracked.set(number, {
+          kind: "issue",
+          state: String(data.state ?? "").toUpperCase(),
+          stateReason: data.state_reason ? String(data.state_reason).toUpperCase() : null,
+          title: data.title ?? "",
+        });
+      }
+    } catch {
+      // Missing or inaccessible issue/PR; checkTrackedItems warns.
+    }
+  }
+  return tracked;
+}
+
 function colorize(text, code, enabled) {
   return enabled ? `\u001b[${code}m${text}\u001b[0m` : text;
 }
@@ -341,7 +671,16 @@ function entryMarker(entryIssues) {
   return " ok ";
 }
 
-function formatReport({ file, upstream, entries, issues, ahead, behind, prsChecked }) {
+function formatReport({
+  file,
+  upstream,
+  entries,
+  issues,
+  ahead,
+  behind,
+  prsChecked,
+  invariantsChecked,
+}) {
   const lines = [];
   lines.push(`${path.basename(file)}  (${entries.length} entries)`);
   if (ahead !== null && behind !== null) {
@@ -359,21 +698,26 @@ function formatReport({ file, upstream, entries, issues, ahead, behind, prsCheck
     const marker = entryMarker(entryIssues);
     const status = entry.status || "missing";
     const pr = entry.pr ? ` #${entry.pr}` : "";
-    lines.push(`  ${marker} ${entry.title}  [${status}${pr}]`);
+    const tracked = entry.tracks?.length
+      ? ` tracks:${entry.tracks.map((t) => (t.kind === "discussion" ? `d#${t.number}` : `#${t.number}`)).join(",")}`
+      : "";
+    lines.push(`  ${marker} ${entry.title}  [${status}${pr}${tracked}]`);
   }
 
   lines.push("");
   if (issues.length === 0) {
+    const suffix = invariantsChecked ? " and all fork invariants passed" : "";
     lines.push(
       prsChecked
-        ? "No drift found."
-        : "No commit or file problems found (pull requests not checked).",
+        ? `No drift found${suffix}.`
+        : `No commit or file problems found (pull requests not checked)${suffix}.`,
     );
   } else {
     lines.push("Issues:");
     for (const issue of issues) {
+      const loc = issue.line > 0 ? ` (${path.basename(file)}:${issue.line})` : "";
       lines.push(
-        `  ${issue.level === "error" ? "error" : "warn "}  ${issue.title} (${path.basename(file)}:${issue.line}): ${issue.message}`,
+        `  ${issue.level === "error" ? "error" : "warn "}  ${issue.title}${loc}: ${issue.message}`,
       );
     }
   }
@@ -399,12 +743,17 @@ function main(argv) {
   const entries = parseForkDocument(readFileSync(options.file, "utf8"));
 
   let prStates = null;
+  let trackedStates = null;
   let prProblem = "";
   if (options.offline) {
     prProblem = "skipped with --offline";
   } else {
     try {
       prStates = fetchPullRequests(options.repo, entries.map((entry) => entry.pr).filter(Boolean));
+      const trackedNumbers = entries.flatMap((entry) =>
+        (entry.tracks ?? []).filter((t) => t.kind === "item").map((t) => t.number),
+      );
+      trackedStates = fetchTrackedItems(options.repo, prStates, trackedNumbers);
     } catch (error) {
       prProblem = error instanceof Error ? error.message.split("\n")[0] : String(error);
     }
@@ -412,9 +761,14 @@ function main(argv) {
 
   const issues = evaluateEntries(entries, {
     prStates,
+    trackedStates,
     commitExists: gitCommitExists,
     commitInUpstream: upstreamContainsCommit(options.upstream),
   });
+
+  if (options.checkInvariants) {
+    issues.push(...checkForkInvariants(REPO_ROOT));
+  }
 
   if (!options.offline && !prStates) {
     // Without PR states the pr-open/upstream checks are meaningless; say so instead of reporting clean.
@@ -442,6 +796,7 @@ function main(argv) {
           ahead,
           behind,
           prsChecked,
+          invariantsChecked: options.checkInvariants,
           prProblem,
           entries,
           issues,
@@ -460,6 +815,7 @@ function main(argv) {
       ahead,
       behind,
       prsChecked,
+      invariantsChecked: options.checkInvariants,
     });
     process.stdout.write(`${report}\n`);
   }

@@ -27,20 +27,21 @@ Not every entry needs a pull request. Upstream declines some work (Bun support, 
 - **Status:** fork-only
 - **Commits:** `abc123456`, `def789012`
 - **PR:** #1234
+- **Tracks:** #5678, #9012, discussion#3456
 - **Upstream:** merged 2026-11-11 (free text, required for `upstream`)
 - **Why:** one sentence on the problem it solves
 - **Notes:** optional caveats, client requirements, rollback
 ```
 
-`Commits` lists the representative commits on `main`, not every duplicate from a rebase. `PR` is required for `pr-open` and `upstream` and optional otherwise.
+`Commits` lists the representative commits on `main`, not every duplicate from a rebase. `PR` is required for `pr-open` and `upstream` and optional otherwise. `Tracks` lists upstream issues, replacement PRs, or `discussion#<n>` links that would make this fork entry redundant once completed or merged.
 
-Check the file with:
+Check the file (and fork invariants) with:
 
 ```sh
-node scripts/fork-status.mjs
+node scripts/fork-status.mjs --check-invariants
 ```
 
-It compares each entry with the pull request's real state and flags drift: a PR that merged while the entry still says `pr-open`, a `fork-only` commit that upstream now contains, a commit that no longer exists. Exit code 1 means the file needs an edit; 2 means the check itself couldn't run (no `gh`, no network).
+It compares each entry with the pull request's real state and any tracked upstream issues/PRs, flagging drift: a PR that merged while the entry still says `pr-open`, a tracked upstream issue closed as completed or replacement PR merged (retirement candidate), a `fork-only` commit that upstream now contains, a commit that no longer exists, or a broken fork invariant (with `--check-invariants`). Exit code 1 means the file or fork needs attention; 2 means the check itself couldn't run (no `gh`, no network).
 
 ## Fork-only changes
 
@@ -72,12 +73,12 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Why:** The context window card showed what was in the window but not how often the prompt cache hit, how many tokens the session had used, or whether the session was covered by a subscription.
 - **Notes:** Shows last-call and session cache hit rate (amber below 50%), session token total, and "Included in plan" for subscription sessions. OpenCode v2 sessions now report usage, so plan limits appear for them too. There is no plan source for Vercel AI Gateway, DeepSeek direct or NVIDIA keys. Upstream 0.17.2 reports its own session rows (tokens, last-reply cache rate, cost) for Claude, OpenCode v2, Pi, Oh My Pi and plugin providers; those show first, and the fork's block drops the last-call rate and the token breakdown when the provider already reports a cache or tokens row. The session cache rate and the plan label stay, and providers without session rows keep the whole block.
 
-### Plugin agent tools for OpenCode agents
+### Share OpenCode v2 helper server for per-chat thread storage and keep opened chats loaded
 
 - **Status:** fork-only
-- **Commits:** `15bf5937f`
-- **Why:** Agent tools that plugins return from `agent.open.before` (Ask's `ask_user`, genui's `render_ui`) reached Claude agents but never OpenCode agents. The OpenCode bridge manifest is built once at boot without a caller agent, so it held only the built-in Paseo tools.
-- **Notes:** Upstream #9426 (in 0.17.0-beta.1) fixed this for the v2 bridge plugin, which now asks for its bound session's catalog; the fork keeps that path as upstream wrote it. What stays fork-only is the v1 bridge plugin: it reads the global manifest once per directory load, so the bridge adds the tools of every session catalog it sees to that manifest, announced before OpenCode loads the plugin. A session without the tool still gets "Paseo tool not found". A plugin tool that first appears after a directory is loaded needs an OpenCode server restart on v1 (a daemon restart does that).
+- **Commits:** `7df8f3224`
+- **Why:** Treating `BB_THREAD_STORAGE`/`PASEO_THREAD_STORAGE` as process env forced every genui OpenCode chat onto its own `opencode serve` (~150 MB RAM and ~5 s cold open), and resumed chats were unloaded on the first idle sweep because viewing them did not count as activity.
+- **Notes:** Keeps `BB_THREAD_STORAGE`/`PASEO_THREAD_STORAGE` in `V2_SESSION_ENV_KEYS` (applied per session) and tracks `markRuntimeAccessed` separately from `updatedAt` in `agent-manager.ts`.
 
 ### The OpenCode diagnostic no longer starts OpenCode's background service
 
@@ -109,6 +110,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** fork-only
 - **Commits:** `26ed542c8`
+- **Tracks:** discussion#9329
 - **Why:** Attaching a photo on iOS meant opening the picker; the camera should be one tap away.
 - **Notes:** Native build only (sideloaded IPA or a local build), not the App Store app.
 
@@ -116,6 +118,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** fork-only
 - **Commits:** `06050098d`
+- **Tracks:** #7286
 - **Why:** Upstream pastes clipboard images on mobile (#2793), but the paste was lost when moving between a new chat and a retained composer on iOS.
 
 ### Unsigned IPA build for sideloading
@@ -174,8 +177,16 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** fork-only
 - **Commits:** `20e9d25ef`, `fdfc407cb`, `2ce1fd613`, `8adc56a9b`, `202a2a50a`
+- **Tracks:** discussion#4867, discussion#5834, discussion#7437
 - **Why:** Plugins had no way to run agent-written HTML as an app: `DocumentFrame` has scripts off, so the genui plugin's inline ` ```app ` blocks and MCP Apps views could not render on the native app. `HtmlFrame` (from `@getpaseo/plugin/client/ui`) is a sandboxed HTML view with a validated CSP origin allowlist, an auto-height measure and a `window.parent.postMessage` bridge that behaves the same on web, desktop, iOS and Android (Discussions #4867, #5834, #7437).
 - **Notes:** Reuses the file preview hardening (`html-preview-csp.ts`, the native navigation guard). A `srcdoc` iframe inherits its embedder's CSP; neither the daemon web UI, the desktop `paseo://` handler nor `index.html` sets one, so allowed CDN scripts load, but a reverse proxy that adds a CSP header to the app page would block them. Native WebView behaviour is covered by DOM tests of the bootstrap shim, not run on a device. Plugins feature-detect `ui.HtmlFrame`. `baseUrl` (2026-11-21) loads native frames from one trusted HTTPS origin so pages that need a secure context (WebCodecs video) work; web keeps the opaque `srcdoc` frame and ignores it.
+
+### Keep plugin tool-call cards visible when a turn folds
+
+- **Status:** fork-only
+- **Commits:** `be56521a1`
+- **Why:** Folding a completed turn hid plugin cards that replaced a tool call (such as MCP App views), even though those cards are the result the user asked for.
+- **Notes:** `isPluginToolView` in `packages/app/src/agent-stream/turn-collapse/model.ts`.
 
 ## Open upstream pull requests
 
@@ -191,6 +202,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** pr-open
 - **PR:** #9328
+- **Tracks:** #2668
 - **Commits:** `56c2757f2`
 - **Why:** Full-size PNG photos from the phone were slow to upload and large on disk.
 
@@ -198,6 +210,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** pr-open
 - **PR:** #9357
+- **Tracks:** #4799, discussion#9118
 - **Commits:** `31da7f4f1`, `dac5dd54f`, `24f73b966`, `970d46bd0`
 - **Why:** A 10 ms sampling interval idled the daemon's event loop for more time than the measurement was worth; coarse sampling while idle keeps the signal without the cost.
 
@@ -205,6 +218,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** pr-open
 - **PR:** #9254
+- **Tracks:** #4799, discussion#9118
 - **Commits:** `1ec759a6c`, `d708fecba`, `dd7646cee`, `13cf2eeca`, `9d2072c43`
 - **Why:** The scheduler polled every second; it now sleeps until the next due job and handles wake edge cases deterministically.
 
@@ -212,13 +226,16 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** pr-open
 - **PR:** #9352
+- **Tracks:** #9353, #9363
 - **Commits:** `fb435d225`, `0c999137d`, `e7b31bb74`
 - **Why:** Per-session liveness pings kept plugin processes busy for no benefit, and a plugin whose daemon channel closed kept running.
+- **Notes:** Upstream `paseo-bot` carried this into replacement PR #9363 (reviewed 5/5, awaiting maintainer).
 
 ### Build with zod 4.6.7
 
 - **Status:** pr-open
 - **PR:** #9260
+- **Tracks:** #9258
 - **Commits:** `9d7a32402`, `19a78b38b`
 - **Why:** The lockfile's third-party zod ranges resolved to a version the build didn't pin, so a fresh install could fail or drift.
 
@@ -226,9 +243,18 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 
 - **Status:** pr-open
 - **PR:** #8382
+- **Tracks:** #3971
 - **Commits:** `590344f35`
 - **Why:** The running indicator wrote its rotation from a UI-thread frame clock, so every frame cloned and committed the shadow tree while any agent ran (about 17 of the app's 19% CPU in a Release build). RN Animated on the native driver rotates it without that cost, which saves battery on the phone.
 - **Notes:** Upstream PR by MatthiasGrandl, carried in the fork until it lands. Native build only (sideloaded IPA).
+
+### Preserve turn footer on plugin-transformed assistant replies
+
+- **Status:** pr-open
+- **PR:** #10445
+- **Tracks:** #10438
+- **Commits:** none on `main` (upstream PR branch)
+- **Why:** Assistant replies replaced by a timeline plugin (such as genui) lost their Copy, Fork, and turn duration footer.
 
 ### Plugin skill docs load on demand
 
@@ -244,6 +270,12 @@ These are already in getpaseo/paseo. They are listed so a rebase doesn't re-liti
 None at the moment.
 
 ## Reverted or dropped
+
+### Plugin agent tools for OpenCode v1 agents
+
+- **Status:** dropped
+- **Commits:** `15bf5937f`
+- **Why:** Upstream #9426 (in 0.17.0-beta.1) fixed per-session plugin agent tools for OpenCode v2. The remaining fork-only v1 `learnedTools`/`announceTools` bridge shim was removed because production runs OpenCode 2.
 
 ### Bun runtime support
 
