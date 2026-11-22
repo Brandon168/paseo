@@ -3210,6 +3210,10 @@ export const ptBR: TranslationResources = {
         showAll: "Mostrar todos",
         hideAll: "Ocultar todos",
         hiddenCount: "{{count}} ocultos",
+        filterAll: "Todos",
+        filterEnabled: "Ativados",
+        filterDisabled: "Desativados",
+        noFilterMatches: "Nenhum modelo corresponde aos filtros atuais",
       },
       installation: {
         title: "Instalação",

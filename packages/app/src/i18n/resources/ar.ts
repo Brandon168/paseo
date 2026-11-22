@@ -3200,6 +3200,10 @@ export const ar: TranslationResources = {
         showAll: "إظهار الكل",
         hideAll: "إخفاء الكل",
         hiddenCount: "{{count}} مخفية",
+        filterAll: "الكل",
+        filterEnabled: "المفعّلة",
+        filterDisabled: "المعطّلة",
+        noFilterMatches: "لا توجد نماذج تطابق عوامل التصفية الحالية",
       },
       installation: {
         title: "التثبيت",

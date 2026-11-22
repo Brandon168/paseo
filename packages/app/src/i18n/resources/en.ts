@@ -3298,6 +3298,10 @@ export const en = {
         showAll: "Show all",
         hideAll: "Hide all",
         hiddenCount: "{{count}} hidden",
+        filterAll: "All",
+        filterEnabled: "Enabled",
+        filterDisabled: "Disabled",
+        noFilterMatches: "No models match the current filters",
       },
       installation: {
         title: "Installation",

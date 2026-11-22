@@ -3127,6 +3127,10 @@ export const zhCN: TranslationResources = {
         showAll: "全部显示",
         hideAll: "全部隐藏",
         hiddenCount: "已隐藏 {{count}} 个",
+        filterAll: "全部",
+        filterEnabled: "已启用",
+        filterDisabled: "已禁用",
+        noFilterMatches: "没有符合当前筛选条件的 Model",
       },
       installation: {
         title: "安装",

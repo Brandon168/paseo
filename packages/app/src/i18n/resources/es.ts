@@ -3229,6 +3229,10 @@ export const es: TranslationResources = {
         showAll: "Mostrar todos",
         hideAll: "Ocultar todos",
         hiddenCount: "{{count}} ocultos",
+        filterAll: "Todos",
+        filterEnabled: "Habilitados",
+        filterDisabled: "Deshabilitados",
+        noFilterMatches: "Ningún modelo coincide con los filtros actuales",
       },
       installation: {
         title: "Instalación",
