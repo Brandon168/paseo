@@ -49,7 +49,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Status:** fork-only
 - **Commits:** `e54de8dae`, `c9dc18fac`
 - **Why:** Model discovery keeps every provider running, but the picker only needs the models I actually use, so models and whole providers can be hidden without turning discovery off.
-- **Notes:** Choices are stored in the app's per-device settings store. The server still lists everything it discovers.
+- **Notes:** Choices are stored in the daemon config (`providers.<id>.hiddenModels`), so they apply to every client. The server still lists everything it discovers. 0.17.1 replaced the provider sheet; the merge re-lands the toggles on its new provider models section.
 
 ### Wider desktop model picker with optional grouping
 
