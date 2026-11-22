@@ -3220,6 +3220,10 @@ export const ptBR: TranslationResources = {
         filterEnabled: "Ativados",
         filterDisabled: "Desativados",
         noFilterMatches: "Nenhum modelo corresponde aos filtros atuais",
+        searchAllPlaceholder: "Buscar em todos os modelos",
+        allRoutes: "Todas as rotas",
+        filterByRoute: "Filtrar por rota",
+        openModelProvider: "Abrir {{provider}} para {{model}}",
       },
       installation: {
         title: "Instalação",

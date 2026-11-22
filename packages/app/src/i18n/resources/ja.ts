@@ -3206,6 +3206,10 @@ export const ja: TranslationResources = {
         filterEnabled: "有効",
         filterDisabled: "無効",
         noFilterMatches: "現在のフィルターに一致するモデルがありません",
+        searchAllPlaceholder: "すべてのモデルを検索",
+        allRoutes: "すべてのルート",
+        filterByRoute: "ルートで絞り込む",
+        openModelProvider: "{{model}} の {{provider}} を開く",
       },
       installation: {
         title: "インストール",

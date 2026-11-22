@@ -183,4 +183,118 @@ test.describe("provider model visibility", () => {
       await provider.restore();
     }
   });
+
+  test("filters models by route, drops scattered subsequence matches, and searches globally from Providers", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const providerId = "routed-search-provider";
+    const provider = await seedModelProvider({
+      id: providerId,
+      label: "Routed search provider",
+      models: [
+        {
+          id: "vercel-brandon-pro/google/gemini-4-neon",
+          label: "Gemini 4 Neon",
+          description: "Vercel route neon model",
+        },
+        {
+          id: "venice/aion-labs-aion-3-5",
+          label: "Aion 3.5",
+          description: "Venice route model",
+        },
+        {
+          id: "claude-agent/claude-sonnet-5",
+          label: "Sonnet 5",
+          description: "Claude agent route model",
+        },
+      ],
+    });
+
+    try {
+      await gotoAppShell(page);
+      await page.goto(`/settings/hosts/${encodeURIComponent(getServerId())}/providers`);
+      await expect(page.getByTestId("provider-list")).toBeVisible({ timeout: 30_000 });
+
+      await test.step("global search on Providers matches across providers without scattered subsequences", async () => {
+        await page.getByTestId("providers-global-search").fill("neon");
+        const results = page.getByTestId("providers-global-model-results");
+        await expect(
+          results.getByTestId(
+            `providers-global-model-row-${providerId}-vercel-brandon-pro/google/gemini-4-neon`,
+          ),
+        ).toBeVisible();
+        await expect(
+          results.getByTestId(`providers-global-model-row-${providerId}-venice/aion-labs-aion-3-5`),
+        ).toHaveCount(0);
+        await expect(
+          results.getByTestId(
+            `providers-global-model-row-${providerId}-claude-agent/claude-sonnet-5`,
+          ),
+        ).toHaveCount(0);
+
+        await page.getByTestId("providers-global-search").fill("stream");
+        await expect(
+          results.getByTestId("providers-global-model-row-mock-one-minute-stream"),
+        ).toBeVisible();
+      });
+
+      await test.step("global visibility filter toggles and reflects across providers", async () => {
+        await page.getByTestId("providers-global-search").fill("aion");
+        const aionSwitch = page.getByTestId(
+          `providers-global-model-visible-${providerId}-venice/aion-labs-aion-3-5`,
+        );
+        await aionSwitch.click();
+        await expect(aionSwitch).toHaveAttribute("aria-checked", "false", { timeout: 10_000 });
+
+        await page.getByTestId("providers-global-search").fill("");
+        await page.getByTestId("providers-models-filter-disabled").click();
+        await expect(
+          page.getByTestId(`providers-global-model-row-${providerId}-venice/aion-labs-aion-3-5`),
+        ).toBeVisible();
+
+        await page.getByTestId("providers-models-show-all").click();
+        await expect(
+          page.getByTestId(`providers-global-model-row-${providerId}-venice/aion-labs-aion-3-5`),
+        ).toHaveCount(0, { timeout: 10_000 });
+        await page.getByTestId("providers-models-filter-all").click();
+        await expect(page.getByTestId("provider-list")).toBeVisible();
+      });
+
+      await test.step("clicking a global result opens that provider, where route filter and back work", async () => {
+        await page.getByTestId("providers-global-search").fill("neon");
+        await page
+          .getByTestId("providers-global-model-results")
+          .getByRole("button", { name: "Open Routed search provider for Gemini 4 Neon" })
+          .click();
+        await expectProviderPageLoaded(page, "Routed search provider");
+
+        const models = page.getByTestId("provider-models");
+        await models.getByTestId("provider-settings-search").fill("neon");
+        await expect(
+          models.getByTestId("provider-model-row-vercel-brandon-pro/google/gemini-4-neon"),
+        ).toBeVisible();
+        await expect(
+          models.getByTestId("provider-model-row-venice/aion-labs-aion-3-5"),
+        ).toHaveCount(0);
+
+        await models.getByTestId("provider-settings-search").fill("");
+        await models.getByTestId("provider-models-route-filter").click();
+        await page.getByRole("menuitem", { name: "venice", exact: true }).click();
+        await expect(
+          models.getByTestId("provider-model-row-venice/aion-labs-aion-3-5"),
+        ).toBeVisible();
+        await expect(
+          models.getByTestId("provider-model-row-vercel-brandon-pro/google/gemini-4-neon"),
+        ).toHaveCount(0);
+
+        await page.getByTestId("provider-detail-back").click();
+        await expect(page.getByTestId("providers-global-model-results")).toBeVisible();
+        await page.getByRole("button", { name: "Clear search" }).click();
+        await expect(page.getByTestId("provider-list")).toBeVisible();
+      });
+    } finally {
+      await provider.restore();
+    }
+  });
 });

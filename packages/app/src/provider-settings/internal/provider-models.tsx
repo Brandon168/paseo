@@ -3,9 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import type { AgentModelDefinition } from "@getpaseo/protocol/agent-types";
 import type { ProviderProfileModel } from "@getpaseo/protocol/provider-config";
-import { compareMatchScores, scoreTextFields } from "@getpaseo/protocol/search/text-match";
 import {
   AdaptiveModalSheet,
   AdaptiveTextInput,
@@ -14,9 +12,6 @@ import {
 import { SettingsSection } from "@/components/settings";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton, paneContentToolbarIconSize } from "@/components/ui/pane-content-toolbar";
-import { SearchField } from "@/components/ui/search-field";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Switch } from "@/components/ui/switch";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-api-context";
@@ -29,6 +24,17 @@ import {
   resolveProviderDiscoveredModels,
   type ProviderDiscoveredModelsCache,
 } from "./discovered-models";
+import {
+  filterAndRankModelEntries,
+  listModelRoutes,
+  rankCustomModels,
+  type ModelVisibilityFilter,
+} from "./model-filter";
+import {
+  DiscoveredModelRow,
+  ModelSearchFilterRail,
+  ModelVisibilityBulkRail,
+} from "./model-filter-controls";
 import type { ProviderEntry } from "./provider-config";
 import { ProviderRefreshButton, useCheckedLabel, type ProviderRefresh } from "./provider-refresh";
 
@@ -37,19 +43,6 @@ const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destruc
 const ThemedTextInput = withUnistyles(AdaptiveTextInput, (theme: Theme) => ({
   placeholderTextColor: theme.colors.foregroundMuted,
 }));
-
-type ModelVisibilityFilter = "all" | "enabled" | "disabled";
-
-function rankModels<T>(items: T[], query: string, fields: (item: T) => string[]): T[] {
-  if (!query) return items;
-  const scored = items
-    .map((item) => ({ item, score: scoreTextFields(query, fields(item)) }))
-    .filter(
-      (entry): entry is { item: T; score: NonNullable<typeof entry.score> } => entry.score !== null,
-    );
-  scored.sort((a, b) => compareMatchScores(a.score, b.score));
-  return scored.map((entry) => entry.item);
-}
 
 /**
  * A provider's models: search, the ones it reports, and the ones added by hand. The caller decides
@@ -76,6 +69,7 @@ export function ProviderModels({
   const toast = useToast();
   const [query, setQuery] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<ModelVisibilityFilter>("all");
+  const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const [pendingHiddenModels, setPendingHiddenModels] = useState<string[] | null>(null);
@@ -104,37 +98,24 @@ export function ProviderModels({
   });
   discoveredCacheRef.current = cache;
 
-  const visibilityFilterOptions = useMemo(
-    () => [
-      {
-        value: "all" as const,
-        label: t("settings.providers.models.filterAll"),
-        testID: "provider-models-filter-all",
-      },
-      {
-        value: "enabled" as const,
-        label: t("settings.providers.models.filterEnabled"),
-        testID: "provider-models-filter-enabled",
-      },
-      {
-        value: "disabled" as const,
-        label: t("settings.providers.models.filterDisabled"),
-        testID: "provider-models-filter-disabled",
-      },
-    ],
-    [t],
-  );
+  const routes = useMemo(() => listModelRoutes(discoveredModels), [discoveredModels]);
+  const activeRoute = selectedRoute && routes.includes(selectedRoute) ? selectedRoute : null;
 
   // Search shows only beside the provider's own models; a query typed then must not hide custom ones.
   const q = discovered ? query.trim() : "";
-  const filteredDiscovered = useMemo(() => {
-    const matches = rankModels(discoveredModels, q, (m) => [m.label, m.id, m.description ?? ""]);
-    if (visibilityFilter === "all") return matches;
-    const showHidden = visibilityFilter === "disabled";
-    return matches.filter((model) => hiddenModelIds.has(model.id) === showHidden);
-  }, [discoveredModels, hiddenModelIds, q, visibilityFilter]);
+  const filteredDiscovered = useMemo(
+    () =>
+      filterAndRankModelEntries(discoveredModels, {
+        query: q,
+        visibility: visibilityFilter,
+        route: activeRoute,
+        getModel: (model) => model,
+        getHidden: (model) => hiddenModelIds.has(model.id),
+      }),
+    [activeRoute, discoveredModels, hiddenModelIds, q, visibilityFilter],
+  );
   const filteredCustom = useMemo(
-    () => rankModels(additionalModels, q, (m) => [m.label, m.id]),
+    () => rankCustomModels(additionalModels, q),
     [additionalModels, q],
   );
 
@@ -235,7 +216,7 @@ export function ProviderModels({
   );
 
   const noDiscoveredMatches =
-    visibilityFilter === "all"
+    visibilityFilter === "all" && activeRoute === null
       ? t("settings.providers.models.noSearchMatches")
       : t("settings.providers.models.noFilterMatches");
 
@@ -284,51 +265,27 @@ export function ProviderModels({
     <View testID="provider-models">
       {discovered ? (
         <SettingsSection title={t("settings.providers.models.title")} trailing={discoveredTrailing}>
-          <View style={styles.searchRail}>
-            <View style={styles.searchField}>
-              <SearchField
-                value={query}
-                onChangeText={setQuery}
-                placeholder={t("settings.providers.models.searchPlaceholder")}
-                clearAccessibilityLabel={t("sessions.actions.clearSearch")}
-                fullWidth
-                testID="provider-settings-search"
-              />
-            </View>
-            <SegmentedControl
-              options={visibilityFilterOptions}
-              value={visibilityFilter}
-              onValueChange={setVisibilityFilter}
-              testID="provider-models-visibility-filter"
-            />
-          </View>
-          <View style={styles.visibilityRail}>
-            <Text style={styles.visibilityHint}>
-              {listedHiddenCount > 0
-                ? t("settings.providers.models.hiddenCount", { count: listedHiddenCount })
-                : null}
-            </Text>
-            <View style={styles.visibilityActions}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onPress={handleShowListed}
-                disabled={savingVisibility || listedHiddenCount === 0}
-                testID="provider-models-show-all"
-              >
-                {t("settings.providers.models.showAll")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onPress={handleHideListed}
-                disabled={savingVisibility || listedHiddenCount === filteredDiscovered.length}
-                testID="provider-models-hide-all"
-              >
-                {t("settings.providers.models.hideAll")}
-              </Button>
-            </View>
-          </View>
+          <ModelSearchFilterRail
+            query={query}
+            onQueryChange={setQuery}
+            placeholder={t("settings.providers.models.searchPlaceholder")}
+            searchTestID="provider-settings-search"
+            visibilityFilter={visibilityFilter}
+            onVisibilityFilterChange={setVisibilityFilter}
+            filterTestIDPrefix="provider-models"
+            routes={routes}
+            selectedRoute={activeRoute}
+            onRouteChange={setSelectedRoute}
+            routeTestID="provider-models-route-filter"
+          />
+          <ModelVisibilityBulkRail
+            hiddenCount={listedHiddenCount}
+            totalCount={filteredDiscovered.length}
+            saving={savingVisibility}
+            onShowAll={handleShowListed}
+            onHideAll={handleHideListed}
+            testIDPrefix="provider-models"
+          />
           <View style={settingsStyles.card}>
             {/* A provider can report hundreds of models; the rest of the page stays in reach. */}
             <ScrollView
@@ -376,65 +333,6 @@ function MutedRow({ children }: { children: string }) {
   return (
     <View style={styles.modelRow}>
       <Text style={settingsStyles.sectionHeaderTitle}>{children}</Text>
-    </View>
-  );
-}
-
-function DiscoveredModelRow({
-  model,
-  first,
-  hidden,
-  saving,
-  onToggleVisible,
-}: {
-  model: AgentModelDefinition;
-  first: boolean;
-  hidden: boolean;
-  saving: boolean;
-  onToggleVisible: (modelId: string, visible: boolean) => void;
-}) {
-  const { t } = useTranslation();
-  const handleValueChange = useCallback(
-    (visible: boolean) => onToggleVisible(model.id, visible),
-    [model.id, onToggleVisible],
-  );
-  return (
-    <View
-      style={[styles.modelRow, !first && settingsStyles.rowBorder]}
-      testID={`provider-model-row-${model.id}`}
-    >
-      {/* Name over id in a column that shrinks, so a long name or id truncates instead of
-          pushing the switch out of the row. */}
-      <View style={styles.modelText}>
-        <Text
-          style={[styles.modelTitle, styles.shrinkText, hidden && styles.hiddenModelText]}
-          numberOfLines={1}
-        >
-          {model.label}
-        </Text>
-        <Text
-          style={[styles.monoHint, styles.shrinkText]}
-          numberOfLines={1}
-          selectable
-          dataSet={CODE_SURFACE_DATASET}
-        >
-          {model.id}
-        </Text>
-        {model.description ? (
-          <Text style={styles.descriptionStacked} numberOfLines={1}>
-            {model.description}
-          </Text>
-        ) : null}
-      </View>
-      <View style={styles.modelSwitch}>
-        <Switch
-          value={!hidden}
-          onValueChange={handleValueChange}
-          disabled={saving}
-          accessibilityLabel={t("settings.providers.models.showModel", { name: model.label })}
-          testID={`provider-model-visible-${model.id}`}
-        />
-      </View>
     </View>
   );
 }
@@ -575,42 +473,9 @@ function AddCustomModelSheet({
 const ADD_SNAP_POINTS = ["40%"];
 
 const styles = StyleSheet.create((theme) => ({
-  // The search field and the filter share a row, and the filter wraps below on a narrow screen.
-  searchRail: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    marginBottom: theme.spacing[3],
-  },
   // Roughly five rows with their ids and descriptions, so a longer list visibly continues.
   discoveredList: {
     maxHeight: 360,
-  },
-  searchField: {
-    flexGrow: 1,
-    flexBasis: 220,
-    flexDirection: "row",
-  },
-  visibilityRail: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[2],
-    marginBottom: theme.spacing[2],
-    minHeight: 32,
-  },
-  visibilityHint: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.foregroundMuted,
-  },
-  visibilityActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-  },
-  hiddenModelText: {
-    color: theme.colors.foregroundMuted,
   },
   headerTrailing: {
     flexDirection: "row",
@@ -637,22 +502,6 @@ const styles = StyleSheet.create((theme) => ({
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.code,
     color: theme.colors.foregroundMuted,
-    flexShrink: 0,
-  },
-  modelText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  shrinkText: {
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  descriptionStacked: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.foregroundMuted,
-  },
-  modelSwitch: {
     flexShrink: 0,
   },
   customModelText: {

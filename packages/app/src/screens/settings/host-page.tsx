@@ -346,7 +346,7 @@ export function HostProvidersPage({ serverId }: { serverId: string }) {
 
   return (
     <View>
-      <ProviderList serverId={serverId} onOpenProvider={openProvider} />
+      <ProviderList serverId={serverId} onOpenProvider={openProvider} showModelSearch />
     </View>
   );
 }

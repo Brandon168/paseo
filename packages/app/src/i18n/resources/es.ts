@@ -3239,6 +3239,10 @@ export const es: TranslationResources = {
         filterEnabled: "Habilitados",
         filterDisabled: "Deshabilitados",
         noFilterMatches: "Ningún modelo coincide con los filtros actuales",
+        searchAllPlaceholder: "Buscar en todos los modelos",
+        allRoutes: "Todas las rutas",
+        filterByRoute: "Filtrar por ruta",
+        openModelProvider: "Abrir {{provider}} para {{model}}",
       },
       installation: {
         title: "Instalación",

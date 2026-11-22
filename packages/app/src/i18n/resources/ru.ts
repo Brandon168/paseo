@@ -3232,6 +3232,10 @@ export const ru: TranslationResources = {
         filterEnabled: "Включённые",
         filterDisabled: "Отключённые",
         noFilterMatches: "Ни одна модель не соответствует текущим фильтрам",
+        searchAllPlaceholder: "Поиск по всем моделям",
+        allRoutes: "Все маршруты",
+        filterByRoute: "Фильтр по маршруту",
+        openModelProvider: "Открыть {{provider}} для {{model}}",
       },
       installation: {
         title: "Установка",

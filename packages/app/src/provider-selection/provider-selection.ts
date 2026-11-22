@@ -253,7 +253,7 @@ function getModelRowSearchFields(row: ProviderSelectionModelRow): string[] {
 }
 
 export function scoreModelRow(row: ProviderSelectionModelRow, normalizedQuery: string) {
-  return scoreTextFields(normalizedQuery, getModelRowSearchFields(row));
+  return scoreTextFields(normalizedQuery, getModelRowSearchFields(row), { subsequence: false });
 }
 
 export function filterAndRankModelRows(

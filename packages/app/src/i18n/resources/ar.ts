@@ -3210,6 +3210,10 @@ export const ar: TranslationResources = {
         filterEnabled: "المفعّلة",
         filterDisabled: "المعطّلة",
         noFilterMatches: "لا توجد نماذج تطابق عوامل التصفية الحالية",
+        searchAllPlaceholder: "البحث في جميع النماذج",
+        allRoutes: "كل المسارات",
+        filterByRoute: "تصفية حسب المسار",
+        openModelProvider: "فتح {{provider}} لـ {{model}}",
       },
       installation: {
         title: "التثبيت",

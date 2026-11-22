@@ -3192,6 +3192,10 @@ export const ko: TranslationResources = {
         filterEnabled: "활성화됨",
         filterDisabled: "비활성화됨",
         noFilterMatches: "현재 필터와 일치하는 모델이 없습니다",
+        searchAllPlaceholder: "모든 모델 검색",
+        allRoutes: "모든 경로",
+        filterByRoute: "경로별 필터",
+        openModelProvider: "{{model}}의 {{provider}} 열기",
       },
       installation: {
         title: "설치",

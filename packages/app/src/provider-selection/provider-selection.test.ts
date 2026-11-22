@@ -271,7 +271,7 @@ describe("combined model selector data", () => {
     expect(matchesModelSearch(row, "kimi gemini")).toBe(false);
   });
 
-  it("ranks model search results by fuzzy match quality", () => {
+  it("ranks model search results by contiguous match quality without scattered subsequences", () => {
     const rows = [
       {
         favoriteKey: "openai:gpt-4.1",
@@ -288,15 +288,25 @@ describe("combined model selector data", () => {
         modelLabel: "GPT-5.4",
       },
       {
-        favoriteKey: "google:gemini",
-        provider: "google",
-        providerLabel: "Google",
-        modelId: "gemini",
-        modelLabel: "Gemini",
+        favoriteKey: "opencode:venice/aion-labs-aion-3-5",
+        provider: "opencode",
+        providerLabel: "OpenCode",
+        modelId: "venice/aion-labs-aion-3-5",
+        modelLabel: "Aion 3.5",
+      },
+      {
+        favoriteKey: "opencode:vercel-brandon-pro/google/gemini-4-neon",
+        provider: "opencode",
+        providerLabel: "OpenCode",
+        modelId: "vercel-brandon-pro/google/gemini-4-neon",
+        modelLabel: "Gemini 4 Neon",
       },
     ];
 
-    expect(filterAndRankModelRows(rows, "gpt54").map((row) => row.modelId)).toEqual(["gpt-5.4"]);
+    expect(filterAndRankModelRows(rows, "gpt 5.4").map((row) => row.modelId)).toEqual(["gpt-5.4"]);
+    expect(filterAndRankModelRows(rows, "neon").map((row) => row.modelId)).toEqual([
+      "vercel-brandon-pro/google/gemini-4-neon",
+    ]);
   });
 
   it("keeps the selected trigger label model-only", () => {

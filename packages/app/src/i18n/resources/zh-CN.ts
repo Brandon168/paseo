@@ -3137,6 +3137,10 @@ export const zhCN: TranslationResources = {
         filterEnabled: "已启用",
         filterDisabled: "已禁用",
         noFilterMatches: "没有符合当前筛选条件的 Model",
+        searchAllPlaceholder: "搜索所有 Model",
+        allRoutes: "所有路由",
+        filterByRoute: "按路由筛选",
+        openModelProvider: "打开 {{model}} 的 {{provider}}",
       },
       installation: {
         title: "安装",
