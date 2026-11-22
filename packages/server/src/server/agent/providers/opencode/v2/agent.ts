@@ -125,7 +125,9 @@ export class OpenCodeV2AgentClient implements AgentClient {
       const info = await connection.client.session.create({
         location: { directory: config.cwd },
         title: config.title,
-        agent: config.modeId ?? "build",
+        // No mode: let OpenCode pick its configured default agent. A hardcoded
+        // "build" fails at prompt time once that agent is renamed or disabled.
+        agent: config.modeId || undefined,
         model: config.model ? modelRef(config.model, config.thinkingOptionId) : undefined,
         permissions: permissionRules(config),
       });

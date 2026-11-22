@@ -1225,13 +1225,31 @@ describe("OpenCode v2 session lifecycle", () => {
       expect(result.finalText).toBe("done");
       expect(events.filter((event) => event.type === "turn_completed")).toHaveLength(1);
       expect(harness.creates[0]).toMatchObject({
-        agent: "build",
         location: { directory: "/tmp/project" },
       });
     } finally {
       await session.close();
     }
     expect(harness.releases).toBe(1);
+  });
+
+  test("a session without a mode leaves the agent to OpenCode's default", async () => {
+    const harness = new V2Harness();
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    const plain = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    await plain.close();
+    const chosen = await client.createSession({
+      provider: "opencode",
+      cwd: "/tmp/project",
+      modeId: "assistant",
+    });
+    await chosen.close();
+    expect(harness.creates).toHaveLength(2);
+    expect(harness.creates[0]?.agent).toBeUndefined();
+    expect(harness.creates[1]?.agent).toBe("assistant");
   });
 
   test("waits for interruption settlement before submitting replacement work", async () => {
