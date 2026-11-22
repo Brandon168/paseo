@@ -173,7 +173,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 ### Plugin HtmlFrame
 
 - **Status:** fork-only
-- **Commits:** `20e9d25ef`, `fdfc407cb`, `2ce1fd613`
+- **Commits:** `20e9d25ef`, `fdfc407cb`, `2ce1fd613`, `8adc56a9b`, `202a2a50a`
 - **Why:** Plugins had no way to run agent-written HTML as an app: `DocumentFrame` has scripts off, so the genui plugin's inline ` ```app ` blocks and MCP Apps views could not render on the native app. `HtmlFrame` (from `@getpaseo/plugin/client/ui`) is a sandboxed HTML view with a validated CSP origin allowlist, an auto-height measure and a `window.parent.postMessage` bridge that behaves the same on web, desktop, iOS and Android (Discussions #4867, #5834, #7437).
 - **Notes:** Reuses the file preview hardening (`html-preview-csp.ts`, the native navigation guard). A `srcdoc` iframe inherits its embedder's CSP; neither the daemon web UI, the desktop `paseo://` handler nor `index.html` sets one, so allowed CDN scripts load, but a reverse proxy that adds a CSP header to the app page would block them. Native WebView behaviour is covered by DOM tests of the bootstrap shim, not run on a device. Plugins feature-detect `ui.HtmlFrame`. `baseUrl` (2026-11-21) loads native frames from one trusted HTTPS origin so pages that need a secure context (WebCodecs video) work; web keeps the opaque `srcdoc` frame and ignores it.
 
@@ -221,6 +221,14 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **PR:** #9260
 - **Commits:** `9d7a32402`, `19a78b38b`
 - **Why:** The lockfile's third-party zod ranges resolved to a version the build didn't pin, so a fresh install could fail or drift.
+
+### Native status ring on the native animation driver
+
+- **Status:** pr-open
+- **PR:** #8382
+- **Commits:** `590344f35`
+- **Why:** The running indicator wrote its rotation from a UI-thread frame clock, so every frame cloned and committed the shadow tree while any agent ran (about 17 of the app's 19% CPU in a Release build). RN Animated on the native driver rotates it without that cost, which saves battery on the phone.
+- **Notes:** Upstream PR by MatthiasGrandl, carried in the fork until it lands. Native build only (sideloaded IPA).
 
 ### Plugin skill docs load on demand
 

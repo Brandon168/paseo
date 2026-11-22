@@ -294,7 +294,7 @@ function countCommits(range) {
   }
 }
 
-function fetchPullRequests(repo) {
+function fetchPullRequests(repo, wanted) {
   const output = execFileSync(
     "gh",
     [
@@ -314,6 +314,20 @@ function fetchPullRequests(repo) {
 
   const states = new Map();
   for (const pr of JSON.parse(output)) states.set(String(pr.number), pr);
+  // The list holds only the newest 1000 pull requests; look up older ones one by one.
+  for (const number of new Set(wanted)) {
+    if (states.has(number) || !/^\d+$/.test(number)) continue;
+    try {
+      const pr = execFileSync(
+        "gh",
+        ["pr", "view", number, "--repo", repo, "--json", "number,state,title,url"],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      states.set(number, JSON.parse(pr));
+    } catch {
+      // Not a pull request in this repo; checkPullRequest reports it.
+    }
+  }
   return states;
 }
 
@@ -390,7 +404,7 @@ function main(argv) {
     prProblem = "skipped with --offline";
   } else {
     try {
-      prStates = fetchPullRequests(options.repo);
+      prStates = fetchPullRequests(options.repo, entries.map((entry) => entry.pr).filter(Boolean));
     } catch (error) {
       prProblem = error instanceof Error ? error.message.split("\n")[0] : String(error);
     }
