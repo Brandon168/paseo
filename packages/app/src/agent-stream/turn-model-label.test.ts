@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
-import { formatTurnModelLabel, resolveTurnModelLabel } from "./turn-model-label";
+import type { AgentMetric, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
+import {
+  formatTurnModelLabel,
+  resolveTurnModelLabel,
+  withoutModelMetric,
+} from "./turn-model-label";
 
 const entries: ProviderSnapshotEntry[] = [
   {
@@ -169,5 +173,25 @@ describe("resolveTurnModelLabel", () => {
     expect(resolveTurnModelLabel({ enabled: true, model, entries })).toBe(
       "Opus 5.5 · claude-agent · High",
     );
+  });
+});
+
+describe("withoutModelMetric", () => {
+  const requests: AgentMetric = { label: "Requests", value: "1" };
+
+  it("drops the Model row whatever its case and keeps the others in order", () => {
+    const cost: AgentMetric = { label: "Cost", value: "$0.10", tone: "warning" };
+    expect(withoutModelMetric([{ label: "model", value: "opus" }, requests, cost])).toEqual([
+      requests,
+      cost,
+    ]);
+  });
+
+  it("leaves nothing for a turn whose only row was the model, so no stats button shows", () => {
+    expect(withoutModelMetric([{ label: "Model", value: "opus" }])).toEqual([]);
+  });
+
+  it("passes a missing list through", () => {
+    expect(withoutModelMetric(undefined)).toBeUndefined();
   });
 });

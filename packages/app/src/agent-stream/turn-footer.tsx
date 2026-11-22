@@ -20,6 +20,7 @@ import type { TurnFooterHost } from "./layout";
 import { AssistantForkMenu } from "@/components/assistant-fork-menu";
 import { SyncedLoader } from "@/components/synced-loader";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { withoutModelMetric } from "./turn-model-label";
 import { useTurnModelLabel } from "./use-turn-model-label";
 
 const ThemedSyncedLoader = withUnistyles(SyncedLoader);
@@ -252,10 +253,6 @@ function CompletedTurnFooter({
       />
     </View>
   );
-}
-
-function withoutModelMetric(metrics: AgentMetric[] | undefined): AgentMetric[] | undefined {
-  return metrics?.filter((metric) => metric.label.toLowerCase() !== "model");
 }
 
 function TurnFooterRow({ children }: { children: ReactNode }) {

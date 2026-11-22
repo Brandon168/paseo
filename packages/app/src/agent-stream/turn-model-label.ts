@@ -1,4 +1,5 @@
 import type {
+  AgentMetric,
   AgentModelDefinition,
   AssistantMessageModel,
   ProviderSnapshotEntry,
@@ -65,4 +66,12 @@ export function resolveTurnModelLabel(input: {
     return null;
   }
   return formatTurnModelLabel(input.model, input.entries);
+}
+
+/**
+ * The turn stats rows without the provider's "Model" row. Used when the footer already names the
+ * model, so it shows once; a turn left with no rows then has no stats button.
+ */
+export function withoutModelMetric(metrics: AgentMetric[] | undefined): AgentMetric[] | undefined {
+  return metrics?.filter((metric) => metric.label.toLowerCase() !== "model");
 }

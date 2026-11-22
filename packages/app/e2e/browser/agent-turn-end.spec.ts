@@ -465,16 +465,31 @@ async function expectFooterWithinWidth(page: Page, width: number): Promise<void>
   await expect(label.getByTestId("turn-footer-timing-label")).toContainText("Worked for");
 }
 
-test("footer timing fits the chat column and swapping labels keeps controls in place", async ({
-  page,
-  agent,
-}) => {
-  await openAgentRoute(page, agent);
-  await expectFooterWithinWidth(page, 140);
-  await expectFooterWithinWidth(page, 150);
-  await expectFooterWithinWidth(page, 300);
-  await expectFooterWithinWidth(page, 880);
-});
+// The footer names the model that answered by default. The setting is per device, so the same
+// narrow-column checks run once with the label and once without it.
+for (const showModel of [true, false]) {
+  test(`footer timing fits the chat column and swapping labels keeps controls in place (model label ${showModel ? "on" : "off"})`, async ({
+    page,
+    agent,
+  }) => {
+    await page.addInitScript((show) => {
+      localStorage.setItem("@paseo:app-settings", JSON.stringify({ showModelOnTurns: show }));
+    }, showModel);
+    await openAgentRoute(page, agent);
+    const footer = page.getByTestId("turn-footer").last();
+    await expect(footer.getByTestId("turn-footer-model-label")).toHaveCount(showModel ? 1 : 0);
+    await expectFooterWithinWidth(page, 140);
+    await expectFooterWithinWidth(page, 150);
+    await expectFooterWithinWidth(page, 300);
+    await expectFooterWithinWidth(page, 880);
+    if (showModel) {
+      // With room to spare the model reads in full beside the timing.
+      const model = footer.getByTestId("turn-footer-model-label");
+      await expect(model).toBeVisible();
+      expect((await model.boundingBox())?.width ?? 0).toBeGreaterThan(48);
+    }
+  });
+}
 
 async function visibleFooterLeftEdges(page: Page): Promise<number[]> {
   return page.evaluate(() => {

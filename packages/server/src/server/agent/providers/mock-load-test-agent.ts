@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type {
   AgentCapabilityFlags,
   AgentClient,
+  AgentMetric,
   AgentOptionControl,
   AgentLaunchContext,
   AgentMode,
@@ -44,6 +45,9 @@ const MOCK_LOAD_TEST_COMMAND: AgentSlashCommand = {
 };
 export const MOCK_LOAD_TEST_HANDLED_COMMAND = `/${MOCK_LOAD_TEST_COMMAND.name} ${MOCK_LOAD_TEST_COMMAND.argumentHint}`;
 const MOCK_LOAD_TEST_MODE_ID = "load-test";
+// Real provider rows beyond the model, so a turn's footer carries a Turn stats button even when the
+// app already shows the model in the footer label and leaves its own Model row out.
+const MOCK_TURN_METRICS: AgentMetric[] = [{ label: "Requests", value: "1" }];
 const MOCK_LOAD_TEST_DURATION_MS = 5 * 60 * 1000;
 const MOCK_LOAD_TEST_INTERVAL_MS = 40;
 
@@ -1344,6 +1348,7 @@ export class MockLoadTestAgentSession implements AgentSession {
       type: "turn_completed",
       provider: this.provider,
       turnId: turn.turnId,
+      metrics: MOCK_TURN_METRICS,
     });
     turn.resolve({
       sessionId: this.id,
@@ -1496,6 +1501,7 @@ export class MockLoadTestAgentSession implements AgentSession {
       type: "turn_completed",
       provider: this.provider,
       turnId: turn.turnId,
+      metrics: MOCK_TURN_METRICS,
       usage,
     });
     turn.resolve({
@@ -1571,6 +1577,7 @@ export class MockLoadTestAgentSession implements AgentSession {
       type: "turn_completed",
       provider: this.provider,
       turnId: turn.turnId,
+      metrics: MOCK_TURN_METRICS,
       usage,
     });
     turn.resolve({
@@ -1686,6 +1693,7 @@ export class MockLoadTestAgentSession implements AgentSession {
       type: "turn_completed",
       provider: this.provider,
       turnId: turn.turnId,
+      metrics: MOCK_TURN_METRICS,
       usage,
     });
     turn.resolve({

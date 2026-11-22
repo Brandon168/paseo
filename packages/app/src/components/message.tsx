@@ -571,6 +571,8 @@ interface AssistantTurnFooterProps {
   metrics?: AgentMetric[];
 }
 
+const MODEL_LABEL_SHRINK = 1000;
+
 const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
@@ -600,10 +602,12 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
     minWidth: 0,
   },
-  // With a model label beside it, the timing keeps room for its longest text and the model
-  // label gives way first.
+  // With a model label beside it, the timing asks for room for its longest text and the model
+  // label gives way first (see `modelLabel`). Only a basis, never a minimum: a footer narrower
+  // than the controls plus 112 would otherwise push the timing out of the row.
   labelButtonBesideModel: {
-    minWidth: 112,
+    flexBasis: 112,
+    minWidth: 0,
   },
   label: {
     width: "100%",
@@ -620,7 +624,9 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     opacity: 0,
   },
   modelLabel: {
-    flexShrink: 1,
+    // Flex shrinks in proportion to factor times basis. This factor makes the model label take
+    // nearly all of a shortfall before the timing label next to it gives up any width.
+    flexShrink: MODEL_LABEL_SHRINK,
     minWidth: 0,
     minHeight: 24,
     textAlignVertical: "center",

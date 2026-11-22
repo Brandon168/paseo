@@ -63,7 +63,7 @@ It compares each entry with the pull request's real state and flags drift: a PR 
 - **Status:** fork-only
 - **Commits:** `7ebbd3e6f`, `a7190ece5`
 - **Why:** With several providers and routes, a conversation needs to show which model produced each reply, not just which model is selected now.
-- **Notes:** The daemon stamps every assistant message with provider, model id and thinking option; the footer shows picker name · route · thinking level. Settings → Chat → "Show model on each turn", on by default, per device. Older clients ignore the added fields. Upstream 0.17.2 also adds a "Model" row to the turn stats card; the card leaves that row out when this footer label is showing, so the model appears once.
+- **Notes:** The daemon stamps every assistant message with provider, model id and thinking option; the footer shows picker name · route · thinking level. Settings → Chat → "Show model on each turn", on by default, per device. Older clients ignore the added fields. Upstream 0.17.2 also adds a "Model" row to the turn stats card; the card leaves that row out when this footer label is showing, so the model appears once. On a narrow footer the model label is shortened first, and Copy, Fork, Turn stats and the timing stay inside the row.
 
 ### Cache hit rate, session tokens and plan usage in the context card
 

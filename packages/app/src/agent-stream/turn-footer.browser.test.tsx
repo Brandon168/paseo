@@ -154,6 +154,77 @@ it("truncates a long model label on a phone width and keeps the timing label who
   expect(model?.getBoundingClientRect().right ?? 0).toBeLessThanOrEqual(300);
 });
 
+// The chrome (Copy, Fork, Turn stats) plus the timing and the model label must stay inside a
+// footer that is narrower than all of them side by side. The model label gives way first, so
+// the timing is never the text that is cut.
+describe("narrow footer with and without model attribution", () => {
+  const MODEL = "DS V4.1 Flash · Direct · high";
+  const stats: AgentMetric[] = [{ label: "Tokens", value: "1.0K ↑ · 600 ↓" }];
+
+  function renderNarrowFooter(width: number, modelLabel: string | null): void {
+    host.style.width = `${width}px`;
+    act(() =>
+      root.render(
+        <PortalProvider>
+          <AssistantTurnFooter
+            getContent={getDoneContent}
+            completedAt={FRIDAY_NIGHT}
+            durationMs={26_000}
+            modelLabel={modelLabel}
+            onFork={noFork}
+            metrics={stats}
+          />
+          <FloatingPanelPortalHost />
+        </PortalProvider>,
+      ),
+    );
+  }
+
+  // The Copy button sits 4px left of the row on purpose, so its icon lines up with the text.
+  const COPY_OUTSET = 4;
+
+  function insideHost(element: Element): boolean {
+    const bounds = host.getBoundingClientRect();
+    return Array.from(element.getClientRects()).every(
+      (rect) => rect.left >= bounds.left - COPY_OUTSET - 0.5 && rect.right <= bounds.right + 0.5,
+    );
+  }
+
+  it.each([140, 150, 300, 880])("keeps every control and label inside %ipx", (width) => {
+    for (const modelLabel of [null, MODEL]) {
+      renderNarrowFooter(width, modelLabel);
+
+      const buttons = Array.from(host.querySelectorAll('[role="button"]'));
+      expect(buttons.length).toBeGreaterThanOrEqual(3);
+      for (const button of buttons) expect(insideHost(button)).toBe(true);
+      const timing = textElement("turn-footer-timing-label");
+      expect(timing && insideHost(timing)).toBe(true);
+      const model = textElement("turn-footer-model-label");
+      if (model) expect(insideHost(model)).toBe(true);
+      expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+    }
+  });
+
+  it("keeps the model readable on a phone and the timing on one line", () => {
+    renderNarrowFooter(300, MODEL);
+
+    const model = textElement("turn-footer-model-label");
+    expect(model?.getBoundingClientRect().width ?? 0).toBeGreaterThan(48);
+    expect(paintedLinesByLabel(host)["Worked for 26s"]).toBe(1);
+    expect(paintedLinesByLabel(host)[MODEL]).toBe(1);
+  });
+
+  it("shortens the model before the timing when the row runs short", () => {
+    renderNarrowFooter(300, MODEL);
+    const timingWithModel = textElement("turn-footer-timing-label")?.getBoundingClientRect().width;
+    renderNarrowFooter(300, null);
+    const timingAlone = textElement("turn-footer-timing-label")?.getBoundingClientRect().width;
+
+    expect(timingWithModel).toBeGreaterThanOrEqual(111);
+    expect(timingAlone).toBeGreaterThanOrEqual(timingWithModel ?? 0);
+  });
+});
+
 const COMPLETED_TIMING: TurnTiming = { completedAt: FRIDAY_NIGHT, durationMs: 26_000 };
 
 describe("turn stats", () => {
