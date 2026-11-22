@@ -9,16 +9,30 @@ import type { HtmlFrameHandle, HtmlFrameProps } from "./types";
 import { useHtmlFrameState } from "./use-html-frame-state";
 
 // Same reasoning as file-panels/html-preview.tsx: the whitelist must match every scheme so the
-// navigation guard sees each request, and the inert base URL keeps "initial document" meaning only
-// inert URLs.
+// navigation guard sees each request, and an inert base URL keeps "initial document" meaning only
+// inert URLs. A plugin may name one trusted HTTPS origin instead (baseUrl), which gives the page a
+// secure context; the guard still allows only that origin's initial document.
 const ORIGIN_WHITELIST = ["*"];
 const BASE_URL = "about:blank";
 const NATIVE_PLATFORM: HtmlFramePlatform = Platform.OS === "android" ? "android" : "ios";
+
+/** The base URL a plugin may set: one https origin, no credentials, no path. */
+function trustedBaseUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return `${url.origin}/`;
+  } catch {
+    return null;
+  }
+}
 
 export const HtmlFrame = forwardRef<HtmlFrameHandle, HtmlFrameProps>(
   function HtmlFrame(props, ref) {
     const state = useHtmlFrameState(props, NATIVE_PLATFORM);
     const { sizing } = state;
+    const baseUrl = useMemo(() => trustedBaseUrl(props.baseUrl), [props.baseUrl]);
     const lastHeight = useRef(sizing.height);
     if (sizing.height !== null) lastHeight.current = sizing.height;
 
@@ -59,6 +73,7 @@ export const HtmlFrame = forwardRef<HtmlFrameHandle, HtmlFrameProps>(
         state={state}
         webView={webView}
         outbox={outbox.current}
+        baseUrl={baseUrl}
         testID={props.testID}
       />
     );
@@ -69,17 +84,22 @@ function HtmlFrameWebView({
   state,
   webView,
   outbox,
+  baseUrl,
   testID,
 }: {
   state: ReturnType<typeof useHtmlFrameState>;
   webView: React.RefObject<WebView | null>;
   outbox: PageOutbox;
+  baseUrl: string | null;
   testID?: string;
 }) {
   const { document, sizing, handleRouted, callbacks } = state;
-  const source = useMemo(() => ({ html: document, baseUrl: BASE_URL }), [document]);
+  const source = useMemo(
+    () => ({ html: document, baseUrl: baseUrl ?? BASE_URL }),
+    [baseUrl, document],
+  );
   // One guard per mounted WebView: an `active` toggle remounts it, and that load must pass again.
-  const allowOnlyInitialDocument = useHtmlPreviewNavigationGuard(document);
+  const allowOnlyInitialDocument = useHtmlPreviewNavigationGuard(document, baseUrl ?? undefined);
 
   const onMessage = useCallback(
     (event: WebViewMessageEvent) => handleRouted(routeNativePageText(event.nativeEvent.data)),

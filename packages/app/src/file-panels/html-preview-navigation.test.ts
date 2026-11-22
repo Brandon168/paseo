@@ -13,6 +13,16 @@ describe("htmlPreviewNavigationKind", () => {
     expect(htmlPreviewNavigationKind("about:srcdoc#decision-table")).toBe("fragment");
   });
 
+  it("allows one trusted base URL as the initial document, and only it", () => {
+    const base = "https://screen.7ven.org/";
+    expect(htmlPreviewNavigationKind("https://screen.7ven.org/", base)).toBe("initialDocument");
+    expect(htmlPreviewNavigationKind("https://screen.7ven.org", base)).toBe("initialDocument");
+    expect(htmlPreviewNavigationKind("https://screen.7ven.org/#section", base)).toBe("fragment");
+    expect(htmlPreviewNavigationKind("https://screen.7ven.org/other", base)).toBe("blocked");
+    expect(htmlPreviewNavigationKind("https://example.com/", base)).toBe("blocked");
+    expect(htmlPreviewNavigationKind("https://screen.7ven.org/")).toBe("blocked");
+  });
+
   it("blocks documents that could escape the injected policy", () => {
     expect(htmlPreviewNavigationKind("https://example.com/leak")).toBe("blocked");
     expect(

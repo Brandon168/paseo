@@ -1706,23 +1706,24 @@ const ref = useRef<HtmlFrameHandle>(null);
 />;
 ```
 
-| 属性                  | 含义                                                                                         |
-| --------------------- | -------------------------------------------------------------------------------------------- |
-| `html`                | 完整文档或片段。Paseo 会在其前面加上 doctype、策略、viewport 和引导脚本。                    |
-| `csp.resourceDomains` | 脚本、样式、图片、字体和媒体可使用的来源：`https://host[:port][/path/]`，主机可带前导 `*.`。 |
-| `csp.connectDomains`  | fetch、XHR、WebSocket 和 EventSource 可访问的来源：`https://…` 或 `wss://…`。默认没有。      |
-| `autoHeight`          | 以 px 为单位的 `{ min, max }`（默认 `{ min: 80, max: 1400 }`），或 `false` 以使用 `height`。 |
-| `height`、`fill`      | 固定高度，或填满父容器（`flex: 1`），用于全屏宿主。                                          |
-| `scrollEnabled`       | 是否在框架内滚动。自动高度时默认关闭（内容超过 `max` 时开启），其他情况默认开启。            |
-| `active`              | `false` 会卸载原生视图，并保留与上次高度相同的占位。                                         |
-| `onContentHeight`     | 页面测得的内容高度（px），未经限制。                                                         |
-| `onMessage`           | 页面通过 `window.parent.postMessage(value, "*")` 发送的每个 JSON 值。                        |
-| `onError`             | 脚本错误、被拒绝的消息，以及被丢弃的 `csp` 条目。                                            |
-| `onLoad`、`testID`    | 加载回调和测试标识。                                                                         |
+| 属性                  | 含义                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| `html`                | 完整文档或片段。Paseo 会在其前面加上 doctype、策略、viewport 和引导脚本。                              |
+| `csp.resourceDomains` | 脚本、样式、图片、字体和媒体可使用的来源：`https://host[:port][/path/]`，主机可带前导 `*.`。           |
+| `csp.connectDomains`  | fetch、XHR、WebSocket 和 EventSource 可访问的来源：`https://…` 或 `wss://…`。默认没有。                |
+| `baseUrl`             | 原生平台上加载页面的受信任 HTTPS 来源（默认 `about:blank`）：为 WebCodecs 提供安全上下文。Web 上忽略。 |
+| `autoHeight`          | 以 px 为单位的 `{ min, max }`（默认 `{ min: 80, max: 1400 }`），或 `false` 以使用 `height`。           |
+| `height`、`fill`      | 固定高度，或填满父容器（`flex: 1`），用于全屏宿主。                                                    |
+| `scrollEnabled`       | 是否在框架内滚动。自动高度时默认关闭（内容超过 `max` 时开启），其他情况默认开启。                      |
+| `active`              | `false` 会卸载原生视图，并保留与上次高度相同的占位。                                                   |
+| `onContentHeight`     | 页面测得的内容高度（px），未经限制。                                                                   |
+| `onMessage`           | 页面通过 `window.parent.postMessage(value, "*")` 发送的每个 JSON 值。                                  |
+| `onError`             | 脚本错误、被拒绝的消息，以及被丢弃的 `csp` 条目。                                                      |
+| `onLoad`、`testID`    | 加载回调和测试标识。                                                                                   |
 
 `ref.postMessage(value)` 会把 JSON 值作为 `message` 事件交给页面，事件的 `source` 是 `window.parent`。两个方向每条消息上限都是 4 MB。页面加载完成之前发送的消息会先保留，待加载完成后再投递；但页面可能更晚才注册监听器，所以应让页面先发一条消息表明自己已就绪。
 
-页面不能使用存储、Cookie、弹窗、表单、下载或导航，除 `csp` 中的来源外也没有网络。页面可以读取 `document.documentElement.dataset.paseoPlatform`，其值为 `"ios"`、`"android"` 或 `"web"`。只接受 `https` 和 `wss` 来源；仅通配符、仅协议、`http`、IP 地址和带引号的条目都会被丢弃，并通过 `onError` 报告。浏览器无法阻止页面导航自身：在 Web 上，框架会被替换为空白页并通过 `onError` 报告；在原生平台上，该导航会被拒绝。页面在框架内能读取到的任何内容，都可以发送到 `connectDomains` 中的来源，所以只列出用户已批准的来源。
+页面不能使用存储、Cookie、弹窗、表单、下载或导航，除 `csp` 中的来源外也没有网络。`baseUrl` 只改变文档来源（让需要安全上下文的 API 可用，相对 URL 也据此解析），离开该来源的导航仍会被拒绝；只接受一个 `https` 来源，凭据、路径和其他内容会被丢弃。页面可以读取 `document.documentElement.dataset.paseoPlatform`，其值为 `"ios"`、`"android"` 或 `"web"`。只接受 `https` 和 `wss` 来源；仅通配符、仅协议、`http`、IP 地址和带引号的条目都会被丢弃，并通过 `onError` 报告。浏览器无法阻止页面导航自身：在 Web 上，框架会被替换为空白页并通过 `onError` 报告；在原生平台上，该导航会被拒绝。页面在框架内能读取到的任何内容，都可以发送到 `connectDomains` 中的来源，所以只列出用户已批准的来源。
 
 ## Command Center 条目 {#command-center-items}
 

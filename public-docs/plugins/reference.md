@@ -2103,19 +2103,20 @@ const ref = useRef<HtmlFrameHandle>(null);
 />;
 ```
 
-| Prop                  | Meaning                                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `html`                | A document or a fragment. Paseo puts a doctype, the policy, a viewport and a bootstrap script before it.    |
-| `csp.resourceDomains` | Origins for scripts, styles, images, fonts and media: `https://host[:port][/path/]`, optional leading `*.`. |
-| `csp.connectDomains`  | Origins for fetch, XHR, WebSocket and EventSource: `https://…` or `wss://…`. Default none.                  |
-| `autoHeight`          | `{ min, max }` in px (default `{ min: 80, max: 1400 }`), or `false` to use `height`.                        |
-| `height`, `fill`      | A fixed height, or fill the parent (`flex: 1`) for a full-screen host.                                      |
-| `scrollEnabled`       | Scroll inside the frame. Default off when auto-sizing (on if the content outgrows `max`), on otherwise.     |
-| `active`              | `false` unmounts the native view and keeps a placeholder of the last height.                                |
-| `onContentHeight`     | The measured content height in px, before clamping.                                                         |
-| `onMessage`           | Every JSON value the page posts with `window.parent.postMessage(value, "*")`.                               |
-| `onError`             | Script errors, refused messages, and `csp` entries that were dropped.                                       |
-| `onLoad`, `testID`    | Load callback and test identifier.                                                                          |
+| Prop                  | Meaning                                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `html`                | A document or a fragment. Paseo puts a doctype, the policy, a viewport and a bootstrap script before it.                      |
+| `csp.resourceDomains` | Origins for scripts, styles, images, fonts and media: `https://host[:port][/path/]`, optional leading `*.`.                   |
+| `csp.connectDomains`  | Origins for fetch, XHR, WebSocket and EventSource: `https://…` or `wss://…`. Default none.                                    |
+| `baseUrl`             | Trusted HTTPS origin to load the page from on native (default `about:blank`): a secure context for WebCodecs. Ignored on web. |
+| `autoHeight`          | `{ min, max }` in px (default `{ min: 80, max: 1400 }`), or `false` to use `height`.                                          |
+| `height`, `fill`      | A fixed height, or fill the parent (`flex: 1`) for a full-screen host.                                                        |
+| `scrollEnabled`       | Scroll inside the frame. Default off when auto-sizing (on if the content outgrows `max`), on otherwise.                       |
+| `active`              | `false` unmounts the native view and keeps a placeholder of the last height.                                                  |
+| `onContentHeight`     | The measured content height in px, before clamping.                                                                           |
+| `onMessage`           | Every JSON value the page posts with `window.parent.postMessage(value, "*")`.                                                 |
+| `onError`             | Script errors, refused messages, and `csp` entries that were dropped.                                                         |
+| `onLoad`, `testID`    | Load callback and test identifier.                                                                                            |
 
 `ref.postMessage(value)` delivers a JSON value to the page as a `message` event whose `source` is
 `window.parent`. Both directions allow 4 MB per message. A message posted before the page loads is
@@ -2123,7 +2124,9 @@ held until it has, but the page may register its listener later, so have the pag
 first.
 
 The page cannot use storage, cookies, popups, forms, downloads or navigation, and has no network
-beyond the `csp` origins. It sees `document.documentElement.dataset.paseoPlatform` set to `"ios"`,
+beyond the `csp` origins. `baseUrl` changes only the document's origin (so APIs that need a secure
+context work and relative URLs resolve there); navigation away from it is still refused. It accepts
+one `https` origin and drops credentials, paths and anything else. It sees `document.documentElement.dataset.paseoPlatform` set to `"ios"`,
 `"android"` or `"web"`. Only `https` and `wss` origins are accepted; wildcard-only, scheme-only,
 `http`, IP-address and quoted entries are dropped and reported through `onError`. A page that
 navigates itself cannot be stopped by the browser: on web the frame is replaced with an empty page
